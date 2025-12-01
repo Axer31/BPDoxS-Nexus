@@ -13,7 +13,7 @@ import {
 } from "@/components/ui/dialog";
 import { 
   Save, Loader2, Building2, Wallet, Upload, Download, AlertTriangle, 
-  Globe, Users, Trash2, Plus, Star, Banknote, Pencil 
+  Globe, Users, Trash2, Plus, Star, Pencil, Mail
 } from "lucide-react";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 
@@ -26,25 +26,22 @@ export default function SettingsPage() {
     company_name: '', address: '', state_code: '', gstin: '', phone: '', email: '', currency: 'INR',
   });
 
+  // --- SMTP State ---
+  const [smtp, setSmtp] = useState({
+    host: '', port: '', user: '', password: '', fromEmail: ''
+  });
+  const [isTestEmailSending, setIsTestEmailSending] = useState(false);
+
   // --- Bank Accounts State ---
   const [banks, setBanks] = useState<any[]>([]);
   const [isAddingBank, setIsAddingBank] = useState(false);
   const [isBankDialogOpen, setIsBankDialogOpen] = useState(false);
-  const [editingBankId, setEditingBankId] = useState<number | null>(null); // Track edit mode
+  const [editingBankId, setEditingBankId] = useState<number | null>(null);
 
   const [newBank, setNewBank] = useState({
-    label: '',
-    bank_name: '',
-    account_holder: '',
-    account_number: '',
-    currency: 'USD',
-    ifsc_code: '',
-    swift_code: '',
-    iban: '',
-    routing_number: '',
-    sort_code: '', // Added Sort Code
-    branch_address: '',
-    is_default: false
+    label: '', bank_name: '', account_holder: '', account_number: '', 
+    currency: 'USD', ifsc_code: '', swift_code: '', iban: '', 
+    routing_number: '', sort_code: '', branch_address: '', is_default: false
   });
 
   // --- Users State ---
@@ -55,6 +52,7 @@ export default function SettingsPage() {
   // --- INITIAL LOAD ---
   useEffect(() => {
     loadSettings();
+    loadSmtp();
     loadBanks();
     loadUsers();
   }, []);
@@ -63,6 +61,13 @@ export default function SettingsPage() {
     try {
         const res = await api.get('/settings/company');
         if (res.data) setProfile(prev => ({ ...prev, ...res.data }));
+    } catch (err) { console.error(err); }
+  };
+
+  const loadSmtp = async () => {
+    try {
+        const res = await api.get('/mail/config');
+        setSmtp(res.data);
     } catch (err) { console.error(err); }
   };
 
@@ -94,6 +99,38 @@ export default function SettingsPage() {
       alert("Failed to save settings.");
     } finally {
       setLoading(false);
+    }
+  };
+
+  // --- HANDLERS: SMTP ---
+  const handleSmtpChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    setSmtp({ ...smtp, [e.target.name]: e.target.value });
+  };
+
+  const handleSaveSmtp = async () => {
+    setLoading(true);
+    try {
+        await api.post('/mail/config', smtp);
+        alert("SMTP Configuration Saved");
+    } catch (e) {
+        alert("Failed to save SMTP settings");
+    } finally {
+        setLoading(false);
+    }
+  };
+
+  const handleSendTestEmail = async () => {
+    const email = prompt("Enter an email address to receive the test:");
+    if (!email) return;
+    
+    setIsTestEmailSending(true);
+    try {
+        await api.post('/mail/test', { email });
+        alert("Test email sent successfully!");
+    } catch (e: any) {
+        alert("Failed to send email: " + (e.response?.data?.error || e.message));
+    } finally {
+        setIsTestEmailSending(false);
     }
   };
 
@@ -138,11 +175,9 @@ export default function SettingsPage() {
     setIsAddingBank(true);
     try {
         if (editingBankId) {
-            // Update Existing
             await api.put(`/banks/${editingBankId}`, newBank);
             alert("Bank Account Updated");
         } else {
-            // Create New
             await api.post('/banks', newBank);
             alert("Bank Account Added");
         }
@@ -157,17 +192,13 @@ export default function SettingsPage() {
 
   const handleDeleteBank = async (id: number) => {
     if (!confirm("Delete this bank account?")) return;
-    try {
-        await api.delete(`/banks/${id}`);
-        loadBanks();
-    } catch (e) { alert("Failed to delete"); }
+    try { await api.delete(`/banks/${id}`); loadBanks(); } 
+    catch (e) { alert("Failed to delete"); }
   };
 
   const handleSetDefaultBank = async (id: number) => {
-    try {
-        await api.patch(`/banks/${id}/default`);
-        loadBanks();
-    } catch (e) { alert("Failed to set default"); }
+    try { await api.patch(`/banks/${id}/default`); loadBanks(); } 
+    catch (e) { alert("Failed to set default"); }
   };
 
   // --- HANDLERS: Users ---
@@ -179,11 +210,8 @@ export default function SettingsPage() {
         alert("User added!");
         setNewUser({ email: '', password: '' }); 
         loadUsers(); 
-    } catch (e) {
-        alert("Failed to create user");
-    } finally {
-        setIsAddingUser(false);
-    }
+    } catch (e) { alert("Failed to create user"); } 
+    finally { setIsAddingUser(false); }
   };
 
   const handleDeleteUser = async (id: number) => {
@@ -228,10 +256,6 @@ export default function SettingsPage() {
           <h1 className="text-3xl font-bold text-slate-900">System Settings</h1>
           <p className="text-slate-500">Manage your company profile and configurations</p>
         </div>
-        <Button onClick={handleSave} disabled={loading} className="bg-slate-900 hover:bg-slate-800">
-          {loading ? <Loader2 className="w-4 h-4 animate-spin mr-2" /> : <Save className="w-4 h-4 mr-2" />}
-          Save Changes
-        </Button>
       </div>
 
       <Tabs defaultValue="general" className="w-full">
@@ -242,139 +266,72 @@ export default function SettingsPage() {
           <TabsTrigger value="bank" className="data-[state=active]:bg-slate-100">
              <Wallet className="w-4 h-4 mr-2" /> Bank Accounts
           </TabsTrigger>
+          <TabsTrigger value="email" className="data-[state=active]:bg-slate-100">
+             <Mail className="w-4 h-4 mr-2" /> Email (SMTP)
+          </TabsTrigger>
           <TabsTrigger value="team" className="data-[state=active]:bg-slate-100">
              <Users className="w-4 h-4 mr-2" /> Team
           </TabsTrigger>
           <TabsTrigger value="backup" className="data-[state=active]:bg-slate-100 text-blue-600">
-             <Upload className="w-4 h-4 mr-2" /> Backup & Restore
+             <Upload className="w-4 h-4 mr-2" /> Backup
           </TabsTrigger>
         </TabsList>
 
-        {/* --- TAB 1: GENERAL INFO --- */}
+        {/* --- TAB 1: GENERAL --- */}
         <TabsContent value="general">
           <Card>
             <CardHeader>
               <CardTitle>Company Profile</CardTitle>
-              <CardDescription>These details will appear on your PDF invoices.</CardDescription>
+              <CardDescription>Details for your PDF invoices.</CardDescription>
             </CardHeader>
             <CardContent className="space-y-4">
               <div className="grid grid-cols-2 gap-4">
-                <div className="space-y-2">
-                  <Label>Company Name</Label>
-                  <Input name="company_name" value={profile.company_name} onChange={handleChange} />
-                </div>
-                <div className="space-y-2">
-                  <Label>GSTIN</Label>
-                  <Input name="gstin" value={profile.gstin} onChange={handleChange} />
-                </div>
+                <div className="space-y-2"><Label>Company Name</Label><Input name="company_name" value={profile.company_name} onChange={handleChange} /></div>
+                <div className="space-y-2"><Label>GSTIN</Label><Input name="gstin" value={profile.gstin} onChange={handleChange} /></div>
               </div>
-              <div className="space-y-2">
-                <Label>Address (Full)</Label>
-                <Input name="address" value={profile.address} onChange={handleChange} />
-              </div>
+              <div className="space-y-2"><Label>Address</Label><Input name="address" value={profile.address} onChange={handleChange} /></div>
               <div className="grid grid-cols-3 gap-4">
-                <div className="space-y-2">
-                  <Label>State Code</Label>
-                  <Input name="state_code" type="number" placeholder="19" value={profile.state_code} onChange={handleChange} />
-                </div>
-                <div className="space-y-2">
-                  <Label>Phone</Label>
-                  <Input name="phone" value={profile.phone} onChange={handleChange} />
-                </div>
-                <div className="space-y-2">
-                  <Label>Email</Label>
-                  <Input name="email" value={profile.email} onChange={handleChange} />
-                </div>
+                <div className="space-y-2"><Label>State Code</Label><Input name="state_code" value={profile.state_code} onChange={handleChange} /></div>
+                <div className="space-y-2"><Label>Phone</Label><Input name="phone" value={profile.phone} onChange={handleChange} /></div>
+                <div className="space-y-2"><Label>Email</Label><Input name="email" value={profile.email} onChange={handleChange} /></div>
               </div>
+              <div className="pt-4"><Button onClick={handleSave} disabled={loading}>{loading ? <Loader2 className="w-4 h-4 animate-spin mr-2"/> : "Save Profile"}</Button></div>
             </CardContent>
           </Card>
         </TabsContent>
 
-        {/* --- TAB 2: BANK ACCOUNTS (Updated) --- */}
+        {/* --- TAB 2: BANK ACCOUNTS --- */}
         <TabsContent value="bank">
           <Card>
             <CardHeader className="flex flex-row items-center justify-between">
-              <div>
-                <CardTitle>Bank Accounts</CardTitle>
-                <CardDescription>Manage multiple accounts for different currencies.</CardDescription>
-              </div>
-              
-              <Button onClick={openAddBankDialog}>
-                <Plus className="w-4 h-4 mr-2" /> Add Account
-              </Button>
-
+              <div><CardTitle>Bank Accounts</CardTitle><CardDescription>Manage multiple accounts.</CardDescription></div>
+              <Button onClick={openAddBankDialog}><Plus className="w-4 h-4 mr-2" /> Add Account</Button>
+              {/* Dialog Implementation */}
               <Dialog open={isBankDialogOpen} onOpenChange={setIsBankDialogOpen}>
                 <DialogContent className="sm:max-w-[600px]">
-                  <DialogHeader>
-                    <DialogTitle>{editingBankId ? "Edit Bank Account" : "Add Bank Account"}</DialogTitle>
-                  </DialogHeader>
+                  <DialogHeader><DialogTitle>{editingBankId ? "Edit Bank" : "Add Bank"}</DialogTitle></DialogHeader>
                   <div className="grid gap-4 py-4">
                     <div className="grid grid-cols-2 gap-4">
-                        <div className="space-y-2">
-                            <Label>Label (Internal Name)</Label>
-                            <Input name="label" placeholder="e.g. Primary USD" value={newBank.label} onChange={handleBankInputChange} />
-                        </div>
-                        <div className="space-y-2">
-                            <Label>Currency</Label>
-                            <select name="currency" className="w-full h-9 border rounded-md px-3 text-sm bg-background" value={newBank.currency} onChange={handleBankInputChange}>
-                                <option value="INR">INR</option>
-                                <option value="USD">USD</option>
-                                <option value="EUR">EUR</option>
-                                <option value="GBP">GBP</option>
-                                <option value="CAD">CAD</option>
-                            </select>
-                        </div>
+                        <div className="space-y-2"><Label>Label</Label><Input name="label" value={newBank.label} onChange={handleBankInputChange} /></div>
+                        <div className="space-y-2"><Label>Currency</Label><select name="currency" className="w-full h-9 border rounded-md px-3 text-sm bg-background" value={newBank.currency} onChange={handleBankInputChange}><option value="USD">USD</option><option value="INR">INR</option><option value="EUR">EUR</option><option value="GBP">GBP</option><option value="CAD">CAD</option></select></div>
                     </div>
                     <div className="grid grid-cols-2 gap-4">
-                        <div className="space-y-2">
-                            <Label>Bank Name</Label>
-                            <Input name="bank_name" value={newBank.bank_name} onChange={handleBankInputChange} />
-                        </div>
-                        <div className="space-y-2">
-                            <Label>Account Number</Label>
-                            <Input name="account_number" value={newBank.account_number} onChange={handleBankInputChange} />
-                        </div>
+                        <div className="space-y-2"><Label>Bank Name</Label><Input name="bank_name" value={newBank.bank_name} onChange={handleBankInputChange} /></div>
+                        <div className="space-y-2"><Label>Account Number</Label><Input name="account_number" value={newBank.account_number} onChange={handleBankInputChange} /></div>
                     </div>
-                    <div className="space-y-2">
-                        <Label>Account Holder Name</Label>
-                        <Input name="account_holder" value={newBank.account_holder} onChange={handleBankInputChange} />
-                    </div>
-                    
-                    {/* International Fields */}
+                    <div className="space-y-2"><Label>Account Holder</Label><Input name="account_holder" value={newBank.account_holder} onChange={handleBankInputChange} /></div>
                     <div className="grid grid-cols-2 gap-4">
-                        <div className="space-y-2">
-                            <Label>IFSC (India)</Label>
-                            <Input name="ifsc_code" placeholder="Optional" value={newBank.ifsc_code} onChange={handleBankInputChange} />
-                        </div>
-                        <div className="space-y-2">
-                            <Label>SWIFT / BIC</Label>
-                            <Input name="swift_code" placeholder="Optional" value={newBank.swift_code} onChange={handleBankInputChange} />
-                        </div>
+                        <div className="space-y-2"><Label>IFSC</Label><Input name="ifsc_code" value={newBank.ifsc_code} onChange={handleBankInputChange} /></div>
+                        <div className="space-y-2"><Label>SWIFT</Label><Input name="swift_code" value={newBank.swift_code} onChange={handleBankInputChange} /></div>
                     </div>
                     <div className="grid grid-cols-2 gap-4">
-                        <div className="space-y-2">
-                            <Label>Routing / ACH</Label>
-                            <Input name="routing_number" placeholder="Optional" value={newBank.routing_number} onChange={handleBankInputChange} />
-                        </div>
-                        <div className="space-y-2">
-                            <Label>Sort Code (UK)</Label>
-                            <Input name="sort_code" placeholder="Optional" value={newBank.sort_code} onChange={handleBankInputChange} />
-                        </div>
+                        <div className="space-y-2"><Label>Routing</Label><Input name="routing_number" value={newBank.routing_number} onChange={handleBankInputChange} /></div>
+                        <div className="space-y-2"><Label>Sort Code</Label><Input name="sort_code" value={newBank.sort_code} onChange={handleBankInputChange} /></div>
                     </div>
-                    <div className="space-y-2">
-                        <Label>IBAN (Europe)</Label>
-                        <Input name="iban" placeholder="Optional" value={newBank.iban} onChange={handleBankInputChange} />
-                    </div>
-                    <div className="space-y-2">
-                        <Label>Branch Address</Label>
-                        <Textarea name="branch_address" placeholder="Bank address details..." value={newBank.branch_address} onChange={handleBankInputChange} />
-                    </div>
+                    <div className="space-y-2"><Label>IBAN</Label><Input name="iban" value={newBank.iban} onChange={handleBankInputChange} /></div>
+                    <div className="space-y-2"><Label>Branch Address</Label><Textarea name="branch_address" value={newBank.branch_address} onChange={handleBankInputChange} /></div>
                   </div>
-                  <DialogFooter>
-                    <Button onClick={handleSaveBank} disabled={isAddingBank}>
-                        {isAddingBank ? "Saving..." : "Save Account"}
-                    </Button>
-                  </DialogFooter>
+                  <DialogFooter><Button onClick={handleSaveBank} disabled={isAddingBank}>{isAddingBank ? "Saving..." : "Save Account"}</Button></DialogFooter>
                 </DialogContent>
               </Dialog>
             </CardHeader>
@@ -383,37 +340,13 @@ export default function SettingsPage() {
                     {banks.map((bank) => (
                         <div key={bank.id} className={`p-4 rounded-lg border ${bank.is_default ? 'border-blue-500 bg-blue-50' : 'border-slate-200 bg-white'}`}>
                             <div className="flex justify-between items-start mb-2">
-                                <div>
-                                    <h3 className="font-bold flex items-center gap-2">
-                                        {bank.label} 
-                                        <span className="text-xs font-normal bg-slate-200 px-2 py-0.5 rounded-full">{bank.currency}</span>
-                                    </h3>
-                                    <p className="text-sm text-slate-500">{bank.bank_name} - {bank.account_number}</p>
-                                </div>
+                                <div><h3 className="font-bold flex items-center gap-2">{bank.label} <span className="text-xs font-normal bg-slate-200 px-2 py-0.5 rounded-full">{bank.currency}</span></h3><p className="text-sm text-slate-500">{bank.bank_name} - {bank.account_number}</p></div>
                                 {bank.is_default && <Star className="w-4 h-4 text-blue-500 fill-blue-500" />}
                             </div>
-                            
-                            {/* Details Display */}
-                            <div className="text-xs text-slate-400 space-y-1 mt-3">
-                                {bank.ifsc_code && <p>IFSC: {bank.ifsc_code}</p>}
-                                {bank.swift_code && <p>SWIFT: {bank.swift_code}</p>}
-                                {bank.routing_number && <p>Routing: {bank.routing_number}</p>}
-                                {bank.sort_code && <p>Sort: {bank.sort_code}</p>}
-                                {bank.iban && <p>IBAN: {bank.iban}</p>}
-                            </div>
-
                             <div className="flex justify-end gap-2 mt-4 pt-3 border-t">
-                                <Button variant="ghost" size="sm" onClick={() => openEditBankDialog(bank)}>
-                                    <Pencil className="w-4 h-4 mr-1" /> Edit
-                                </Button>
-                                {!bank.is_default && (
-                                    <Button variant="ghost" size="sm" onClick={() => handleSetDefaultBank(bank.id)}>
-                                        Set Default
-                                    </Button>
-                                )}
-                                <Button variant="ghost" size="sm" className="text-red-500 hover:text-red-600" onClick={() => handleDeleteBank(bank.id)}>
-                                    <Trash2 className="w-4 h-4" />
-                                </Button>
+                                <Button variant="ghost" size="sm" onClick={() => openEditBankDialog(bank)}><Pencil className="w-4 h-4 mr-1" /> Edit</Button>
+                                {!bank.is_default && <Button variant="ghost" size="sm" onClick={() => handleSetDefaultBank(bank.id)}>Set Default</Button>}
+                                <Button variant="ghost" size="sm" className="text-red-500" onClick={() => handleDeleteBank(bank.id)}><Trash2 className="w-4 h-4" /></Button>
                             </div>
                         </div>
                     ))}
@@ -422,96 +355,71 @@ export default function SettingsPage() {
           </Card>
         </TabsContent>
 
-        {/* --- TAB 3: TEAM --- */}
+        {/* --- TAB 3: EMAIL CONFIG (NEW) --- */}
+        <TabsContent value="email">
+          <Card>
+            <CardHeader>
+              <CardTitle>SMTP Configuration</CardTitle>
+              <CardDescription>Configure your email provider to send invoices directly.</CardDescription>
+            </CardHeader>
+            <CardContent className="space-y-4">
+              <div className="grid grid-cols-2 gap-4">
+                <div className="space-y-2"><Label>SMTP Host</Label><Input name="host" placeholder="smtp.gmail.com" value={smtp.host} onChange={handleSmtpChange} /></div>
+                <div className="space-y-2"><Label>SMTP Port</Label><Input name="port" placeholder="587 or 465" value={smtp.port} onChange={handleSmtpChange} /></div>
+              </div>
+              <div className="grid grid-cols-2 gap-4">
+                <div className="space-y-2"><Label>User / Email</Label><Input name="user" value={smtp.user} onChange={handleSmtpChange} /></div>
+                <div className="space-y-2"><Label>Password / App Key</Label><Input type="password" name="password" placeholder="••••••••" value={smtp.password} onChange={handleSmtpChange} /></div>
+              </div>
+              <div className="space-y-2"><Label>Sender Email (From)</Label><Input name="fromEmail" placeholder="accounts@mycompany.com" value={smtp.fromEmail} onChange={handleSmtpChange} /></div>
+              
+              <div className="pt-4 border-t flex justify-between">
+                 <Button variant="outline" onClick={handleSendTestEmail} disabled={isTestEmailSending}>
+                    {isTestEmailSending ? <Loader2 className="w-4 h-4 animate-spin mr-2"/> : <Mail className="w-4 h-4 mr-2"/>}
+                    Send Test Email
+                 </Button>
+                 <Button onClick={handleSaveSmtp} disabled={loading}>{loading ? "Saving..." : "Save Configuration"}</Button>
+              </div>
+            </CardContent>
+          </Card>
+        </TabsContent>
+
+        {/* --- TAB 4: TEAM --- */}
         <TabsContent value="team">
           <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
             <Card>
-              <CardHeader>
-                <CardTitle>System Admins</CardTitle>
-                <CardDescription>Manage who has access to InvoiceCore.</CardDescription>
-              </CardHeader>
+              <CardHeader><CardTitle>System Admins</CardTitle></CardHeader>
               <CardContent>
                 <Table>
-                  <TableHeader>
-                    <TableRow>
-                      <TableHead>Email</TableHead>
-                      <TableHead>Role</TableHead>
-                      <TableHead className="text-right">Action</TableHead>
-                    </TableRow>
-                  </TableHeader>
-                  <TableBody>
-                    {users.map((u) => (
-                      <TableRow key={u.id}>
-                        <TableCell className="font-medium">{u.email}</TableCell>
-                        <TableCell><span className="text-xs bg-slate-100 px-2 py-1 rounded-full">{u.role}</span></TableCell>
-                        <TableCell className="text-right">
-                          <Button variant="ghost" size="icon" onClick={() => handleDeleteUser(u.id)}>
-                            <Trash2 className="w-4 h-4 text-red-500" />
-                          </Button>
-                        </TableCell>
-                      </TableRow>
-                    ))}
-                  </TableBody>
+                  <TableHeader><TableRow><TableHead>Email</TableHead><TableHead>Role</TableHead><TableHead className="text-right">Action</TableHead></TableRow></TableHeader>
+                  <TableBody>{users.map((u) => (<TableRow key={u.id}><TableCell className="font-medium">{u.email}</TableCell><TableCell><span className="text-xs bg-slate-100 px-2 py-1 rounded-full">{u.role}</span></TableCell><TableCell className="text-right"><Button variant="ghost" size="icon" onClick={() => handleDeleteUser(u.id)}><Trash2 className="w-4 h-4 text-red-500" /></Button></TableCell></TableRow>))}</TableBody>
                 </Table>
               </CardContent>
             </Card>
-
             <Card>
-              <CardHeader>
-                <CardTitle>Add New Admin</CardTitle>
-                <CardDescription>Create a new login credential.</CardDescription>
-              </CardHeader>
+              <CardHeader><CardTitle>Add New Admin</CardTitle></CardHeader>
               <CardContent className="space-y-4">
-                <div className="space-y-2">
-                  <Label>Email Address</Label>
-                  <Input type="email" placeholder="user@company.com" value={newUser.email} onChange={(e) => setNewUser({...newUser, email: e.target.value})} />
-                </div>
-                <div className="space-y-2">
-                  <Label>Password</Label>
-                  <Input type="password" placeholder="••••••••" value={newUser.password} onChange={(e) => setNewUser({...newUser, password: e.target.value})} />
-                </div>
-                <Button onClick={handleCreateUser} disabled={isAddingUser} className="w-full">
-                  {isAddingUser ? <Loader2 className="w-4 h-4 animate-spin mr-2" /> : <Plus className="w-4 h-4 mr-2" />}
-                  Create Account
-                </Button>
+                <div className="space-y-2"><Label>Email</Label><Input type="email" value={newUser.email} onChange={(e) => setNewUser({...newUser, email: e.target.value})} /></div>
+                <div className="space-y-2"><Label>Password</Label><Input type="password" value={newUser.password} onChange={(e) => setNewUser({...newUser, password: e.target.value})} /></div>
+                <Button onClick={handleCreateUser} disabled={isAddingUser} className="w-full">{isAddingUser ? <Loader2 className="w-4 h-4 animate-spin"/> : "Create Account"}</Button>
               </CardContent>
             </Card>
           </div>
         </TabsContent>
 
-        {/* --- TAB 4: BACKUP --- */}
+        {/* --- TAB 5: BACKUP --- */}
         <TabsContent value="backup">
           <Card>
-            <CardHeader>
-              <CardTitle>Data Management</CardTitle>
-              <CardDescription>Export/Import your system data.</CardDescription>
-            </CardHeader>
+            <CardHeader><CardTitle>Data Management</CardTitle></CardHeader>
             <CardContent className="space-y-6">
               <div className="flex items-center justify-between p-4 border rounded-lg bg-slate-50">
-                <div>
-                  <h3 className="font-medium text-slate-900">Export Data</h3>
-                  <p className="text-sm text-slate-500">Download .iec backup file.</p>
-                </div>
-                <Button variant="outline" onClick={handleBackupDownload}>
-                  <Download className="w-4 h-4 mr-2" /> Download
-                </Button>
+                <div><h3 className="font-medium text-slate-900">Export Data</h3><p className="text-sm text-slate-500">Download .iec backup file.</p></div>
+                <Button variant="outline" onClick={handleBackupDownload}><Download className="w-4 h-4 mr-2" /> Download</Button>
               </div>
               <div className="flex items-center justify-between p-4 border rounded-lg bg-red-50 border-red-100">
-                <div className="w-2/3">
-                  <h3 className="font-medium text-red-900 flex items-center">
-                    <AlertTriangle className="w-4 h-4 mr-2" /> Import Data
-                  </h3>
-                  <p className="text-sm text-red-700 mt-1">Warning: This will overwrite data.</p>
-                </div>
+                <div className="w-2/3"><h3 className="font-medium text-red-900 flex items-center"><AlertTriangle className="w-4 h-4 mr-2" /> Import Data</h3><p className="text-sm text-red-700 mt-1">Warning: This will overwrite data.</p></div>
                 <div className="w-1/3 flex justify-end">
-                    {isBackupLoading ? (
-                        <Button disabled variant="destructive"><Loader2 className="w-4 h-4 animate-spin" /></Button>
-                    ) : (
-                        <div className="relative">
-                            <input type="file" accept=".iec" onChange={handleRestore} className="absolute inset-0 w-full h-full opacity-0 cursor-pointer" />
-                            <Button variant="destructive"><Upload className="w-4 h-4 mr-2" /> Restore</Button>
-                        </div>
-                    )}
+                    {isBackupLoading ? <Button disabled variant="destructive"><Loader2 className="w-4 h-4 animate-spin" /></Button> : <div className="relative"><input type="file" accept=".iec" onChange={handleRestore} className="absolute inset-0 w-full h-full opacity-0 cursor-pointer" /><Button variant="destructive"><Upload className="w-4 h-4 mr-2" /> Restore</Button></div>}
                 </div>
               </div>
             </CardContent>
