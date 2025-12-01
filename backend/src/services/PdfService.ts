@@ -11,13 +11,18 @@ export class PdfService {
     // @ts-ignore
     const invoice = await prisma.invoice.findUnique({
       where: { id: invoiceId },
-      // @ts-ignore
-      include: { client: true }
+      include: { 
+        // @ts-ignore
+        client: true,
+        // @ts-ignore 
+        bank_account: true // <--- NEW: Fetch linked bank account
+      }
     });
 
     if (!invoice) throw new Error("Invoice not found");
 
-    // 2. Fetch Owner Profile for the Header
+    // 2. Fetch Owner Profile for the Header (Fallback & Company Info)
+    // @ts-ignore
     const ownerSettings = await prisma.systemSetting.findUnique({
       where: { key: 'COMPANY_PROFILE' }
     });
@@ -28,7 +33,7 @@ export class PdfService {
     // 4. Launch System Chrome (Lightweight)
     const browser = await puppeteer.launch({
       executablePath: process.env.PUPPETEER_EXECUTABLE_PATH,
-      args: ['--no-sandbox', '--disable-setuid-sandbox'], // Required for VPS/Linux later
+      args: ['--no-sandbox', '--disable-setuid-sandbox'],
       headless: true
     });
 

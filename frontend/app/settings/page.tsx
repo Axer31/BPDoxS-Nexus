@@ -9,21 +9,23 @@ import { Button } from "@/components/ui/button";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Textarea } from "@/components/ui/textarea";
 import { 
-  Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger, DialogFooter 
+  Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter 
 } from "@/components/ui/dialog";
 import { 
   Save, Loader2, Building2, Wallet, Upload, Download, AlertTriangle, 
-  Globe, Users, Trash2, Plus, Star, Pencil, Mail
+  Users, Trash2, Plus, Star, Pencil, Mail
 } from "lucide-react";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 
 export default function SettingsPage() {
   const [loading, setLoading] = useState(false);
   const [isBackupLoading, setIsBackupLoading] = useState(false);
-  
+  const [isImporting, setIsImporting] = useState(false); // <--- FIXED: Added missing state
+
   // --- Profile State ---
   const [profile, setProfile] = useState({
     company_name: '', address: '', state_code: '', gstin: '', phone: '', email: '', currency: 'INR',
+    logo: '', signature: ''
   });
 
   // --- Templates State ---
@@ -31,32 +33,6 @@ export default function SettingsPage() {
     invoice: { subject: '', body: '' },
     quotation: { subject: '', body: '' }
   });
-
-  // --- Load Templates ---
-  useEffect(() => {
-    // ... existing loads ...
-    loadTemplates();
-  }, []);
-
-  const loadTemplates = async () => {
-    try {
-        const res = await api.get('/mail/templates');
-        setTemplates(res.data);
-    } catch (err) { console.error(err); }
-  };
-
-  // --- Save Templates ---
-  const handleSaveTemplates = async () => {
-    setLoading(true);
-    try {
-        await api.post('/mail/templates', templates);
-        alert("Templates saved successfully!");
-    } catch (e) {
-        alert("Failed to save templates");
-    } finally {
-        setLoading(false);
-    }
-  };
 
   // --- SMTP State ---
   const [smtp, setSmtp] = useState({
@@ -83,39 +59,27 @@ export default function SettingsPage() {
 
   // --- INITIAL LOAD ---
   useEffect(() => {
-    loadSettings();
-    loadSmtp();
-    loadBanks();
-    loadUsers();
+    const loadAll = async () => {
+        try {
+            const [companyRes, smtpRes, banksRes, usersRes, templatesRes] = await Promise.all([
+                api.get('/settings/company'),
+                api.get('/mail/config'),
+                api.get('/banks'),
+                api.get('/users'),
+                api.get('/mail/templates')
+            ]);
+            
+            if (companyRes.data) setProfile(prev => ({ ...prev, ...companyRes.data }));
+            setSmtp(smtpRes.data);
+            setBanks(banksRes.data);
+            setUsers(usersRes.data);
+            setTemplates(templatesRes.data);
+        } catch (e) {
+            console.error("Failed to load settings", e);
+        }
+    };
+    loadAll();
   }, []);
-
-  const loadSettings = async () => {
-    try {
-        const res = await api.get('/settings/company');
-        if (res.data) setProfile(prev => ({ ...prev, ...res.data }));
-    } catch (err) { console.error(err); }
-  };
-
-  const loadSmtp = async () => {
-    try {
-        const res = await api.get('/mail/config');
-        setSmtp(res.data);
-    } catch (err) { console.error(err); }
-  };
-
-  const loadBanks = async () => {
-    try {
-        const res = await api.get('/banks');
-        setBanks(res.data);
-    } catch (err) { console.error(err); }
-  };
-
-  const loadUsers = async () => {
-    try {
-        const res = await api.get('/users');
-        setUsers(res.data);
-    } catch (err) { console.error(err); }
-  };
 
   // --- HANDLERS: General ---
   const handleChange = (e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement>) => {
@@ -131,6 +95,37 @@ export default function SettingsPage() {
       alert("Failed to save settings.");
     } finally {
       setLoading(false);
+    }
+  };
+
+  // --- HANDLERS: Branding Upload ---
+  const handleFileUpload = async (e: React.ChangeEvent<HTMLInputElement>, field: 'logo' | 'signature') => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+
+    const formData = new FormData();
+    formData.append('file', file);
+
+    try {
+      const res = await api.post('/upload', formData, {
+        headers: { 'Content-Type': 'multipart/form-data' }
+      });
+      setProfile(prev => ({ ...prev, [field]: res.data.filePath }));
+    } catch (err) {
+      alert("Upload failed");
+    }
+  };
+
+  // --- HANDLERS: Templates ---
+  const handleSaveTemplates = async () => {
+    setLoading(true);
+    try {
+        await api.post('/mail/templates', templates);
+        alert("Templates saved successfully!");
+    } catch (e) {
+        alert("Failed to save templates");
+    } finally {
+        setLoading(false);
     }
   };
 
@@ -214,7 +209,8 @@ export default function SettingsPage() {
             alert("Bank Account Added");
         }
         setIsBankDialogOpen(false);
-        loadBanks();
+        const res = await api.get('/banks');
+        setBanks(res.data);
     } catch (e) {
         alert("Failed to save bank account");
     } finally {
@@ -224,13 +220,19 @@ export default function SettingsPage() {
 
   const handleDeleteBank = async (id: number) => {
     if (!confirm("Delete this bank account?")) return;
-    try { await api.delete(`/banks/${id}`); loadBanks(); } 
-    catch (e) { alert("Failed to delete"); }
+    try { 
+        await api.delete(`/banks/${id}`);
+        const res = await api.get('/banks');
+        setBanks(res.data);
+    } catch (e) { alert("Failed to delete"); }
   };
 
   const handleSetDefaultBank = async (id: number) => {
-    try { await api.patch(`/banks/${id}/default`); loadBanks(); } 
-    catch (e) { alert("Failed to set default"); }
+    try { 
+        await api.patch(`/banks/${id}/default`);
+        const res = await api.get('/banks');
+        setBanks(res.data);
+    } catch (e) { alert("Failed to set default"); }
   };
 
   // --- HANDLERS: Users ---
@@ -241,15 +243,19 @@ export default function SettingsPage() {
         await api.post('/users', newUser);
         alert("User added!");
         setNewUser({ email: '', password: '' }); 
-        loadUsers(); 
+        const res = await api.get('/users');
+        setUsers(res.data); 
     } catch (e) { alert("Failed to create user"); } 
     finally { setIsAddingUser(false); }
   };
 
   const handleDeleteUser = async (id: number) => {
     if (!confirm("Are you sure?")) return;
-    try { await api.delete(`/users/${id}`); loadUsers(); } 
-    catch (e) { alert("Failed to delete user"); }
+    try { 
+        await api.delete(`/users/${id}`);
+        const res = await api.get('/users');
+        setUsers(res.data);
+    } catch (e) { alert("Failed to delete user"); }
   };
 
   // --- HANDLERS: Backup ---
@@ -279,10 +285,31 @@ export default function SettingsPage() {
     } catch (err) { alert("Restore Failed."); } finally { setIsBackupLoading(false); }
   };
 
+  // --- HANDLER: CSV Import ---
+  const handleCsvImport = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    
+    if (!confirm(`Import clients from ${file.name}?`)) return;
+
+    const formData = new FormData();
+    formData.append('file', file);
+    setIsImporting(true);
+
+    try {
+        const res = await api.post('/import/clients', formData, {
+            headers: { 'Content-Type': 'multipart/form-data' }
+        });
+        alert(`Import Successful! Added ${res.data.imported} clients.`);
+    } catch (e) {
+        alert("Import Failed. Check CSV format.");
+    } finally {
+        setIsImporting(false);
+    }
+  };
+
   return (
     <div className="min-h-screen bg-slate-50 p-8 space-y-6">
-      
-      {/* Header */}
       <div className="flex justify-between items-center">
         <div>
           <h1 className="text-3xl font-bold text-slate-900">System Settings</h1>
@@ -295,6 +322,9 @@ export default function SettingsPage() {
           <TabsTrigger value="general" className="data-[state=active]:bg-slate-100">
              <Building2 className="w-4 h-4 mr-2" /> General
           </TabsTrigger>
+          <TabsTrigger value="branding" className="data-[state=active]:bg-slate-100">
+             <Star className="w-4 h-4 mr-2" /> Branding
+          </TabsTrigger>
           <TabsTrigger value="bank" className="data-[state=active]:bg-slate-100">
              <Wallet className="w-4 h-4 mr-2" /> Bank Accounts
           </TabsTrigger>
@@ -305,7 +335,7 @@ export default function SettingsPage() {
              <Users className="w-4 h-4 mr-2" /> Team
           </TabsTrigger>
           <TabsTrigger value="backup" className="data-[state=active]:bg-slate-100 text-blue-600">
-             <Upload className="w-4 h-4 mr-2" /> Backup
+             <Upload className="w-4 h-4 mr-2" /> Backup & Import
           </TabsTrigger>
         </TabsList>
 
@@ -332,13 +362,57 @@ export default function SettingsPage() {
           </Card>
         </TabsContent>
 
-        {/* --- TAB 2: BANK ACCOUNTS --- */}
+        {/* --- TAB 2: BRANDING --- */}
+        <TabsContent value="branding">
+          <Card>
+            <CardHeader>
+              <CardTitle>Branding & Customization</CardTitle>
+              <CardDescription>Upload assets to professionalize your documents.</CardDescription>
+            </CardHeader>
+            <CardContent className="space-y-8">
+              {/* Logo */}
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-6 items-center">
+                <div>
+                    <h3 className="font-medium text-sm mb-1">Company Logo</h3>
+                    <p className="text-xs text-slate-500 mb-3">Appears at the top-left of invoices. Recommended: 300x100px PNG.</p>
+                    <Input type="file" accept="image/*" onChange={(e) => handleFileUpload(e, 'logo')} />
+                </div>
+                <div className="border border-dashed rounded-lg h-32 flex items-center justify-center bg-slate-50 relative overflow-hidden">
+                    {profile.logo ? (
+                        <img src={`http://localhost:5000${profile.logo}`} alt="Logo Preview" className="max-h-full object-contain" />
+                    ) : (
+                        <span className="text-xs text-slate-400">No Logo</span>
+                    )}
+                </div>
+              </div>
+              {/* Signature */}
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-6 items-center border-t pt-6">
+                <div>
+                    <h3 className="font-medium text-sm mb-1">Authorised Signatory / Stamp</h3>
+                    <p className="text-xs text-slate-500 mb-3">Appears at the bottom-right. Recommended: 200x100px Transparent PNG.</p>
+                    <Input type="file" accept="image/*" onChange={(e) => handleFileUpload(e, 'signature')} />
+                </div>
+                <div className="border border-dashed rounded-lg h-32 flex items-center justify-center bg-slate-50 relative overflow-hidden">
+                    {profile.signature ? (
+                        <img src={`http://localhost:5000${profile.signature}`} alt="Sign Preview" className="max-h-full object-contain" />
+                    ) : (
+                        <span className="text-xs text-slate-400">No Signature</span>
+                    )}
+                </div>
+              </div>
+              <div className="flex justify-end pt-4">
+                 <Button onClick={handleSave} disabled={loading}>{loading ? "Saving..." : "Save Branding"}</Button>
+              </div>
+            </CardContent>
+          </Card>
+        </TabsContent>
+
+        {/* --- TAB 3: BANK ACCOUNTS --- */}
         <TabsContent value="bank">
           <Card>
             <CardHeader className="flex flex-row items-center justify-between">
               <div><CardTitle>Bank Accounts</CardTitle><CardDescription>Manage multiple accounts.</CardDescription></div>
               <Button onClick={openAddBankDialog}><Plus className="w-4 h-4 mr-2" /> Add Account</Button>
-              {/* Dialog Implementation */}
               <Dialog open={isBankDialogOpen} onOpenChange={setIsBankDialogOpen}>
                 <DialogContent className="sm:max-w-[600px]">
                   <DialogHeader><DialogTitle>{editingBankId ? "Edit Bank" : "Add Bank"}</DialogTitle></DialogHeader>
@@ -387,16 +461,11 @@ export default function SettingsPage() {
           </Card>
         </TabsContent>
 
-{/* --- TAB 3: EMAIL CONFIG & TEMPLATES --- */}
+        {/* --- TAB 4: EMAIL CONFIG & TEMPLATES --- */}
         <TabsContent value="email">
           <div className="grid grid-cols-1 gap-6">
-            
-            {/* SMTP Config Card */}
             <Card>
-              <CardHeader>
-                <CardTitle>SMTP Configuration</CardTitle>
-                <CardDescription>Configure your email provider.</CardDescription>
-              </CardHeader>
+              <CardHeader><CardTitle>SMTP Configuration</CardTitle><CardDescription>Configure your email provider.</CardDescription></CardHeader>
               <CardContent className="space-y-4">
                 <div className="grid grid-cols-2 gap-4">
                   <div className="space-y-2"><Label>SMTP Host</Label><Input name="host" placeholder="smtp.gmail.com" value={smtp.host} onChange={handleSmtpChange} /></div>
@@ -407,78 +476,32 @@ export default function SettingsPage() {
                   <div className="space-y-2"><Label>Password</Label><Input type="password" name="password" placeholder="••••••••" value={smtp.password} onChange={handleSmtpChange} /></div>
                 </div>
                 <div className="space-y-2"><Label>Sender Email (From)</Label><Input name="fromEmail" value={smtp.fromEmail} onChange={handleSmtpChange} /></div>
-                
                 <div className="pt-4 border-t flex justify-between">
-                   <Button variant="outline" onClick={handleSendTestEmail} disabled={isTestEmailSending}>
-                      {isTestEmailSending ? <Loader2 className="w-4 h-4 animate-spin mr-2"/> : <Mail className="w-4 h-4 mr-2"/>}
-                      Send Test Email
-                   </Button>
+                   <Button variant="outline" onClick={handleSendTestEmail} disabled={isTestEmailSending}>{isTestEmailSending ? <Loader2 className="w-4 h-4 animate-spin mr-2"/> : <Mail className="w-4 h-4 mr-2"/>} Send Test Email</Button>
                    <Button onClick={handleSaveSmtp} disabled={loading}>{loading ? "Saving..." : "Save Config"}</Button>
                 </div>
               </CardContent>
             </Card>
-
-            {/* Email Templates Card (NEW) */}
             <Card>
-              <CardHeader>
-                <CardTitle>Email Templates</CardTitle>
-                <CardDescription>Customize the subject and body of your emails. Use placeholders like {"{{client}}"}, {"{{number}}"}, {"{{amount}}"}, {"{{date}}"}.</CardDescription>
-              </CardHeader>
+              <CardHeader><CardTitle>Email Templates</CardTitle><CardDescription>Customize the subject and body of your emails.</CardDescription></CardHeader>
               <CardContent className="space-y-6">
-                
-                {/* Invoice Template */}
                 <div className="space-y-3 border p-4 rounded-md bg-slate-50/50">
                     <h3 className="font-semibold text-sm">Invoice Email</h3>
-                    <div className="space-y-2">
-                        <Label>Subject</Label>
-                        <Input 
-                            value={templates.invoice.subject} 
-                            onChange={(e) => setTemplates({...templates, invoice: {...templates.invoice, subject: e.target.value}})} 
-                        />
-                    </div>
-                    <div className="space-y-2">
-                        <Label>Body</Label>
-                        <Textarea 
-                            className="h-32 font-mono text-xs"
-                            value={templates.invoice.body} 
-                            onChange={(e) => setTemplates({...templates, invoice: {...templates.invoice, body: e.target.value}})} 
-                        />
-                    </div>
+                    <div className="space-y-2"><Label>Subject</Label><Input value={templates.invoice.subject} onChange={(e) => setTemplates({...templates, invoice: {...templates.invoice, subject: e.target.value}})} /></div>
+                    <div className="space-y-2"><Label>Body</Label><Textarea className="h-32 font-mono text-xs" value={templates.invoice.body} onChange={(e) => setTemplates({...templates, invoice: {...templates.invoice, body: e.target.value}})} /></div>
                 </div>
-
-                {/* Quotation Template */}
                 <div className="space-y-3 border p-4 rounded-md bg-slate-50/50">
                     <h3 className="font-semibold text-sm">Quotation Email</h3>
-                    <div className="space-y-2">
-                        <Label>Subject</Label>
-                        <Input 
-                            value={templates.quotation.subject} 
-                            onChange={(e) => setTemplates({...templates, quotation: {...templates.quotation, subject: e.target.value}})} 
-                        />
-                    </div>
-                    <div className="space-y-2">
-                        <Label>Body</Label>
-                        <Textarea 
-                            className="h-32 font-mono text-xs"
-                            value={templates.quotation.body} 
-                            onChange={(e) => setTemplates({...templates, quotation: {...templates.quotation, body: e.target.value}})} 
-                        />
-                    </div>
+                    <div className="space-y-2"><Label>Subject</Label><Input value={templates.quotation.subject} onChange={(e) => setTemplates({...templates, quotation: {...templates.quotation, subject: e.target.value}})} /></div>
+                    <div className="space-y-2"><Label>Body</Label><Textarea className="h-32 font-mono text-xs" value={templates.quotation.body} onChange={(e) => setTemplates({...templates, quotation: {...templates.quotation, body: e.target.value}})} /></div>
                 </div>
-
-                <div className="flex justify-end">
-                    <Button onClick={handleSaveTemplates} disabled={loading}>
-                        {loading ? <Loader2 className="w-4 h-4 animate-spin mr-2"/> : <Save className="w-4 h-4 mr-2"/>}
-                        Save Templates
-                    </Button>
-                </div>
-
+                <div className="flex justify-end"><Button onClick={handleSaveTemplates} disabled={loading}>{loading ? <Loader2 className="w-4 h-4 animate-spin mr-2"/> : <Save className="w-4 h-4 mr-2"/>} Save Templates</Button></div>
               </CardContent>
             </Card>
           </div>
         </TabsContent>
 
-        {/* --- TAB 4: TEAM --- */}
+        {/* --- TAB 5: TEAM --- */}
         <TabsContent value="team">
           <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
             <Card>
@@ -501,21 +524,53 @@ export default function SettingsPage() {
           </div>
         </TabsContent>
 
-        {/* --- TAB 5: BACKUP --- */}
+        {/* --- TAB 6: BACKUP & IMPORT --- */}
         <TabsContent value="backup">
           <Card>
             <CardHeader><CardTitle>Data Management</CardTitle></CardHeader>
             <CardContent className="space-y-6">
+              {/* Export */}
               <div className="flex items-center justify-between p-4 border rounded-lg bg-slate-50">
-                <div><h3 className="font-medium text-slate-900">Export Data</h3><p className="text-sm text-slate-500">Download .iec backup file.</p></div>
-                <Button variant="outline" onClick={handleBackupDownload}><Download className="w-4 h-4 mr-2" /> Download</Button>
+                <div><h3 className="font-medium text-slate-900">Export System Data</h3><p className="text-sm text-slate-500">Download encrypted .iec backup file.</p></div>
+                <Button variant="outline" onClick={handleBackupDownload}><Download className="w-4 h-4 mr-2" /> Download Backup</Button>
               </div>
+              
+              {/* Import IEC */}
               <div className="flex items-center justify-between p-4 border rounded-lg bg-red-50 border-red-100">
-                <div className="w-2/3"><h3 className="font-medium text-red-900 flex items-center"><AlertTriangle className="w-4 h-4 mr-2" /> Import Data</h3><p className="text-sm text-red-700 mt-1">Warning: This will overwrite data.</p></div>
+                <div className="w-2/3"><h3 className="font-medium text-red-900 flex items-center"><AlertTriangle className="w-4 h-4 mr-2" /> Restore System</h3><p className="text-sm text-red-700 mt-1">Warning: This will overwrite current data.</p></div>
                 <div className="w-1/3 flex justify-end">
-                    {isBackupLoading ? <Button disabled variant="destructive"><Loader2 className="w-4 h-4 animate-spin" /></Button> : <div className="relative"><input type="file" accept=".iec" onChange={handleRestore} className="absolute inset-0 w-full h-full opacity-0 cursor-pointer" /><Button variant="destructive"><Upload className="w-4 h-4 mr-2" /> Restore</Button></div>}
+                    {isBackupLoading ? <Button disabled variant="destructive"><Loader2 className="w-4 h-4 animate-spin" /></Button> : <div className="relative"><input type="file" accept=".iec" onChange={handleRestore} className="absolute inset-0 w-full h-full opacity-0 cursor-pointer" /><Button variant="destructive"><Upload className="w-4 h-4 mr-2" /> Restore .IEC</Button></div>}
                 </div>
               </div>
+
+              {/* Import CSV */}
+              <div className="mt-6 pt-6 border-t">
+                <h3 className="font-medium text-slate-900 mb-2">Legacy Migration (CSV)</h3>
+                <div className="flex items-center justify-between p-4 border border-dashed rounded-lg bg-slate-50">
+                    <div>
+                        <h4 className="font-medium text-sm">Import Clients from CSV</h4>
+                        <p className="text-xs text-slate-500 mt-1">
+                            Required Headers: <span className="font-mono bg-slate-200 px-1 rounded">company_name</span>, <span className="font-mono bg-slate-200 px-1 rounded">email</span>, <span className="font-mono bg-slate-200 px-1 rounded">gst</span>, <span className="font-mono bg-slate-200 px-1 rounded">state_code</span>
+                        </p>
+                    </div>
+                    <div className="relative">
+                        {isImporting ? (
+                            <Button disabled variant="outline"><Loader2 className="w-4 h-4 animate-spin mr-2"/> Importing...</Button>
+                        ) : (
+                            <>
+                                <input 
+                                    type="file" 
+                                    accept=".csv" 
+                                    onChange={handleCsvImport} 
+                                    className="absolute inset-0 w-full h-full opacity-0 cursor-pointer" 
+                                />
+                                <Button variant="outline"><Upload className="w-4 h-4 mr-2" /> Select CSV</Button>
+                            </>
+                        )}
+                    </div>
+                </div>
+              </div>
+
             </CardContent>
           </Card>
         </TabsContent>

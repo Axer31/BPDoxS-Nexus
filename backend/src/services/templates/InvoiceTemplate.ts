@@ -1,8 +1,11 @@
-export const generateInvoiceHTML = (invoice: any, ownerProfile: any) => {
-  const items = invoice.line_items; // JSON array of items
-  const tax = invoice.tax_summary;  // JSON object of tax calculations
+import fs from 'fs';
+import path from 'path';
 
-  // Format currency helper
+export const generateInvoiceHTML = (invoice: any, ownerProfile: any) => {
+  const items = invoice.line_items; 
+  const tax = invoice.tax_summary;  
+
+  // --- 1. HELPER: Format Currency ---
   const formatCurrency = (amount: number) => {
     return new Intl.NumberFormat('en-IN', {
       style: 'currency',
@@ -11,6 +14,69 @@ export const generateInvoiceHTML = (invoice: any, ownerProfile: any) => {
     }).format(amount);
   };
 
+  // --- 2. HELPER: Get Base64 Image ---
+  // Reads files from frontend/public/uploads and converts to Base64
+  // so Puppeteer can render them without needing a running web server
+  const getBase64Image = (webPath: string) => {
+    if (!webPath) return null;
+    try {
+      // Resolve path: backend/src/services/templates -> root/frontend/public
+      const systemPath = path.join(__dirname, '../../../../frontend/public', webPath);
+      
+      if (fs.existsSync(systemPath)) {
+        const bitmap = fs.readFileSync(systemPath);
+        const ext = path.extname(systemPath).slice(1);
+        return `data:image/${ext};base64,${bitmap.toString('base64')}`;
+      }
+      return null;
+    } catch (e) {
+      console.error("Image load failed for:", webPath, e);
+      return null;
+    }
+  };
+
+  // --- 3. PREPARE DATA ---
+  
+  // Load Branding Images
+  const logoSrc = getBase64Image(ownerProfile?.json_value?.logo);
+  const signatureSrc = getBase64Image(ownerProfile?.json_value?.signature);
+
+  // Bank Details Logic
+  let bankBlock = null;
+  if (invoice.bank_account) {
+    // A. Priority: Use the Bank Account selected on this specific Invoice
+    const b = invoice.bank_account;
+    let codeLabel = 'Routing';
+    let codeValue = b.routing_number;
+
+    if (b.swift_code) {
+        codeLabel = 'SWIFT/BIC';
+        codeValue = b.swift_code;
+    } else if (b.ifsc_code) {
+        codeLabel = 'IFSC';
+        codeValue = b.ifsc_code;
+    }
+
+    bankBlock = {
+      name: b.bank_name,
+      account: b.account_number,
+      codeLabel: codeLabel,
+      codeValue: codeValue || '-',
+      iban: b.iban
+    };
+  } else if (ownerProfile?.json_value?.bank_details) {
+    // B. Fallback: Use Global Company Settings
+    const b = ownerProfile.json_value.bank_details;
+    bankBlock = {
+      name: b.bank_name || '-',
+      account: b.ac_no || '-',
+      codeLabel: 'IFSC',
+      codeValue: b.ifsc || '-',
+      iban: null
+    };
+  }
+
+  // --- 4. RENDER HTML ---
   return `
     <!DOCTYPE html>
     <html>
@@ -23,6 +89,7 @@ export const generateInvoiceHTML = (invoice: any, ownerProfile: any) => {
           padding: 40px; 
           max-width: 800px; 
           margin: 0 auto; 
+          font-size: 14px;
         }
         .header { 
           display: flex; 
@@ -30,6 +97,12 @@ export const generateInvoiceHTML = (invoice: any, ownerProfile: any) => {
           margin-bottom: 40px; 
           border-bottom: 2px solid #f1f5f9; 
           padding-bottom: 20px; 
+        }
+        .company-logo {
+            max-width: 150px; 
+            max-height: 80px; 
+            margin-bottom: 15px;
+            display: block;
         }
         .company-name { 
           font-size: 24px; 
@@ -57,10 +130,10 @@ export const generateInvoiceHTML = (invoice: any, ownerProfile: any) => {
           color: #64748b; 
           font-weight: bold; 
           margin-bottom: 4px; 
-          margin-top: 12px;
+          margin-top: 12px; 
         }
-        .value { font-size: 14px; line-height: 1.5; }
-        .meta-value { font-size: 14px; text-align: right; line-height: 1.5; }
+        .value { line-height: 1.5; }
+        .meta-value { text-align: right; line-height: 1.5; }
 
         table { 
           width: 100%; 
@@ -79,7 +152,6 @@ export const generateInvoiceHTML = (invoice: any, ownerProfile: any) => {
         td { 
           padding: 12px; 
           border-bottom: 1px solid #e2e8f0; 
-          font-size: 13px; 
           vertical-align: top;
         }
         .text-right { text-align: right; }
@@ -95,7 +167,6 @@ export const generateInvoiceHTML = (invoice: any, ownerProfile: any) => {
           display: flex; 
           justify-content: space-between; 
           padding: 6px 0; 
-          font-size: 13px;
         }
         .grand-total { 
           font-size: 16px; 
@@ -121,7 +192,19 @@ export const generateInvoiceHTML = (invoice: any, ownerProfile: any) => {
           background-color: #f8fafc;
           border-radius: 4px;
           font-size: 12px;
-          width: 50%;
+          width: 60%;
+          border: 1px solid #e2e8f0;
+        }
+        .remarks-box {
+          margin-top: 20px;
+          font-size: 12px;
+          color: #64748b;
+          font-style: italic;
+          padding: 10px;
+          background: #fffbeb;
+          border: 1px solid #fcd34d;
+          border-radius: 4px;
+          width: 60%;
         }
       </style>
     </head>
@@ -129,12 +212,14 @@ export const generateInvoiceHTML = (invoice: any, ownerProfile: any) => {
 
       <div class="header">
         <div>
-          <div class="company-name">${ownerProfile.value}</div>
-          <div class="value" style="white-space: pre-line;">${ownerProfile.json_value.address}</div>
+          ${logoSrc ? `<img src="${logoSrc}" class="company-logo" />` : ''}
+          
+          <div class="company-name">${ownerProfile?.value || 'Company Name'}</div>
+          <div class="value" style="white-space: pre-line;">${ownerProfile?.json_value?.address || ''}</div>
           <div class="label">GSTIN</div>
-          <div class="value">${ownerProfile.json_value.gstin}</div>
+          <div class="value">${ownerProfile?.json_value?.gstin || '-'}</div>
           <div class="label">Contact</div>
-          <div class="value">${ownerProfile.json_value.email} | ${ownerProfile.json_value.phone}</div>
+          <div class="value">${ownerProfile?.json_value?.email || ''} | ${ownerProfile?.json_value?.phone || ''}</div>
         </div>
         <div>
           <div class="invoice-title">INVOICE</div>
@@ -163,10 +248,10 @@ export const generateInvoiceHTML = (invoice: any, ownerProfile: any) => {
           </div>
 
           <div class="label">Client GSTIN</div>
-          <div class="value">${invoice.client.gst_number || 'N/A'}</div>
+          <div class="value">${invoice.client.tax_id || 'N/A'}</div>
           
           <div class="label">Place of Supply</div>
-          <div class="value">State Code: ${invoice.client.state_code}</div>
+          <div class="value">${invoice.client.country === 'India' ? `State Code: ${invoice.client.state_code}` : 'Export / International'}</div>
         </div>
       </div>
 
@@ -188,8 +273,8 @@ export const generateInvoiceHTML = (invoice: any, ownerProfile: any) => {
               </td>
               <td class="text-center">${item.hsn || '-'}</td>
               <td class="text-right">${item.quantity}</td>
-              <td class="text-right">${formatCurrency(item.rate).replace('₹', '')}</td>
-              <td class="text-right">${formatCurrency(item.amount).replace('₹', '')}</td>
+              <td class="text-right">${formatCurrency(item.rate).replace(/[^0-9.-]+/g,"")}</td>
+              <td class="text-right">${formatCurrency(item.amount).replace(/[^0-9.-]+/g,"")}</td>
             </tr>
           `).join('')}
         </tbody>
@@ -204,18 +289,18 @@ export const generateInvoiceHTML = (invoice: any, ownerProfile: any) => {
           
           ${tax.taxType === 'IGST' ? `
             <div class="row">
-              <span>IGST (18%)</span>
+              <span>IGST (${tax.gstRate}%)</span>
               <span>${formatCurrency(tax.breakdown.igst)}</span>
             </div>
           ` : ''}
 
           ${tax.taxType === 'CGST_SGST' ? `
             <div class="row">
-              <span>CGST (9%)</span>
+              <span>CGST (${tax.gstRate/2}%)</span>
               <span>${formatCurrency(tax.breakdown.cgst)}</span>
             </div>
             <div class="row">
-              <span>SGST (9%)</span>
+              <span>SGST (${tax.gstRate/2}%)</span>
               <span>${formatCurrency(tax.breakdown.sgst)}</span>
             </div>
           ` : ''}
@@ -223,7 +308,7 @@ export const generateInvoiceHTML = (invoice: any, ownerProfile: any) => {
           ${tax.taxType === 'NONE' ? `
              <div class="row" style="color: green;">
               <span>Tax (Export/Exempt)</span>
-              <span>₹0.00</span>
+              <span>0.00</span>
             </div>
           ` : ''}
 
@@ -237,16 +322,37 @@ export const generateInvoiceHTML = (invoice: any, ownerProfile: any) => {
         </div>
       </div>
 
-      ${ownerProfile.json_value.bank_details ? `
+      ${invoice.remarks ? `
+        <div class="remarks-box">
+          <strong>Remarks:</strong><br/>
+          ${invoice.remarks.replace(/\n/g, '<br/>')}
+        </div>
+      ` : ''}
+
+      ${bankBlock ? `
         <div class="bank-details">
           <div class="label" style="margin-top: 0;">Bank Details for Payment</div>
-          <div class="row"><span>Bank Name:</span> <strong>${ownerProfile.json_value.bank_details.bank_name || '-'}</strong></div>
-          <div class="row"><span>Account No:</span> <strong>${ownerProfile.json_value.bank_details.ac_no || '-'}</strong></div>
-          <div class="row"><span>IFSC Code:</span> <strong>${ownerProfile.json_value.bank_details.ifsc || '-'}</strong></div>
+          <div class="row"><span>Bank Name:</span> <strong>${bankBlock.name}</strong></div>
+          <div class="row"><span>Account No:</span> <strong>${bankBlock.account}</strong></div>
+          
+          ${bankBlock.codeValue ? `
+            <div class="row"><span>${bankBlock.codeLabel}:</span> <strong>${bankBlock.codeValue}</strong></div>
+          ` : ''}
+          
+          ${bankBlock.iban ? `
+            <div class="row"><span>IBAN:</span> <strong>${bankBlock.iban}</strong></div>
+          ` : ''}
         </div>
       ` : ''}
 
       <div class="footer">
+        ${signatureSrc ? `
+          <div style="text-align: right; margin-bottom: 10px;">
+            <img src="${signatureSrc}" style="max-width: 120px; max-height: 60px;" />
+            <div style="font-size: 10px; margin-top: 5px; font-weight: bold;">Authorised Signatory</div>
+          </div>
+        ` : ''}
+        
         This is a computer-generated invoice and does not require a physical signature.
       </div>
 

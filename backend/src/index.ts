@@ -15,6 +15,8 @@ import userRoutes from './routes/userRoutes';
 import expenseRoutes from './routes/expenseRoutes';
 import quotationRoutes from './routes/quotationRoutes';
 import mailRoutes from './routes/mailRoutes';
+import uploadRoutes from './routes/uploadRoutes';
+import importRoutes from './routes/importRoutes';
 
 // 1. Initialize Configuration
 dotenv.config();
@@ -49,6 +51,8 @@ app.use('/api/users', userRoutes);
 app.use('/api/expenses', expenseRoutes);
 app.use('/api/quotations', quotationRoutes);
 app.use('/api/mail', mailRoutes);
+app.use('/api/upload', uploadRoutes);
+app.use('/api/import', importRoutes);
 
 // 4. Start Server
 app.listen(PORT, () => {
