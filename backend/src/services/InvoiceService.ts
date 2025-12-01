@@ -5,23 +5,25 @@ const prisma = new PrismaClient();
 
 interface CreateInvoiceDTO {
   clientId: number;
-  issueDate: string; // ISO Date string
+  issueDate: string;
   dueDate?: string;
   items: any[];
   taxSummary: any;
   subtotal: number;
   grandTotal: number;
+  isManual: boolean;
+  manualNumber?: string;
+  // New Fields
+  remarks?: string;
+  bankAccountId?: number;
 }
 
 export class InvoiceService {
   
-  // Helper: Get Fiscal Year string (e.g., "24-25")
   private static getFiscalYear(date: Date): string {
-    const month = date.getMonth() + 1; // 1-12
+    const month = date.getMonth() + 1;
     const year = date.getFullYear();
     const shortYear = year % 100;
-
-    // In India, FY starts April 1st
     if (month >= 4) {
       return `${shortYear}-${shortYear + 1}`;
     } else {
@@ -29,55 +31,52 @@ export class InvoiceService {
     }
   }
 
-  // Core: Generate Number & Save Invoice
   static async createInvoice(data: CreateInvoiceDTO) {
-    
     return await prisma.$transaction(async (tx) => {
-      // 1. Determine Fiscal Year
       const dateObj = new Date(data.issueDate);
-      const fy = this.getFiscalYear(dateObj);
+      let invoiceNumber = data.manualNumber;
 
-      // 2. Get Next Sequence Number
-      // We look for a sequence for "24-25". If not found, create one starting at 0.
-      let sequence = await tx.invoiceSequence.findUnique({
-        where: { fiscal_year: fy }
-      });
+      // 1. Auto-Generation Logic
+      if (!data.isManual || !invoiceNumber) {
+        const fy = this.getFiscalYear(dateObj);
+        // @ts-ignore
+        let sequence = await tx.invoiceSequence.findUnique({ where: { fiscal_year: fy } });
 
-      if (!sequence) {
-        sequence = await tx.invoiceSequence.create({
-          data: { fiscal_year: fy, last_count: 0 }
-        });
+        if (!sequence) {
+          // @ts-ignore
+          sequence = await tx.invoiceSequence.create({ data: { fiscal_year: fy, last_count: 0 } });
+        }
+
+        const nextCount = sequence.last_count + 1;
+        invoiceNumber = `DDP/${fy}/${nextCount.toString().padStart(3, '0')}`;
+
+        // @ts-ignore
+        await tx.invoiceSequence.update({ where: { id: sequence.id }, data: { last_count: nextCount } });
+      } else {
+        // Manual Check
+        // @ts-ignore
+        const existing = await tx.invoice.findUnique({ where: { invoice_number: invoiceNumber } });
+        if (existing) throw new Error(`Invoice number ${invoiceNumber} already exists.`);
       }
 
-      const nextCount = sequence.last_count + 1;
-      
-      // 3. Format the Invoice Number (e.g., "DDP/24-25/001")
-      // Pad with zeros to 3 digits
-      const paddedCount = nextCount.toString().padStart(3, '0'); 
-      const invoiceNumber = `DDP/${fy}/${paddedCount}`;
-
-      // 4. Update the Sequence
-      await tx.invoiceSequence.update({
-        where: { id: sequence.id },
-        data: { last_count: nextCount }
-      });
-
-      // 5. Create the Invoice Record
-      const newInvoice = await tx.invoice.create({
+      // 2. Create Record
+      // @ts-ignore
+      return await tx.invoice.create({
         data: {
-          invoice_number: invoiceNumber,
+          invoice_number: invoiceNumber!,
           client_id: data.clientId,
           issue_date: dateObj,
           due_date: data.dueDate ? new Date(data.dueDate) : null,
           status: 'DRAFT',
-          line_items: data.items,       // Prisma automatically handles JSON
-          tax_summary: data.taxSummary, // Prisma automatically handles JSON
+          line_items: data.items,
+          tax_summary: data.taxSummary,
           subtotal: data.subtotal,
-          grand_total: data.grandTotal
+          grand_total: data.grandTotal,
+          is_manual_entry: data.isManual,
+          remarks: data.remarks,           // <--- New
+          bank_account_id: data.bankAccountId // <--- New
         }
       });
-
-      return newInvoice;
     });
   }
 }

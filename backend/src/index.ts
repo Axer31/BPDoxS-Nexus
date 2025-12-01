@@ -9,6 +9,10 @@ import authRoutes from './routes/authRoutes';
 import { authenticateToken } from './middleware/authMiddleware';
 import backupRoutes from './routes/backupRoutes';
 import utilRoutes from './routes/utilRoutes';
+import twoFactorRoutes from './routes/2faRoutes';
+import bankRoutes from './routes/bankRoutes';
+import userRoutes from './routes/userRoutes';
+import expenseRoutes from './routes/expenseRoutes';
 
 // 1. Initialize Configuration
 dotenv.config();
@@ -37,8 +41,12 @@ app.use('/api/dashboard', dashboardRoutes);
 app.use('/api/settings', settingRoutes);
 app.use('/api/backup', backupRoutes);
 app.use('/api/utils', utilRoutes);
+app.use('/api/2fa', twoFactorRoutes);
+app.use('/api/banks', bankRoutes);
+app.use('/api/users', userRoutes);
+app.use('/api/expenses', expenseRoutes);
 
-// 6. Start Server
+// 4. Start Server
 app.listen(PORT, () => {
   console.log(`[InvoiceCore] Server running on port ${PORT}`);
   console.log(`[System] GST Logic Module: READY`); 

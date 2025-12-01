@@ -2,6 +2,7 @@ import { Router } from 'express';
 import { PrismaClient } from '@prisma/client';
 import bcrypt from 'bcrypt';
 import jwt from 'jsonwebtoken';
+import { authenticator } from 'otplib';
 
 const router = Router();
 const prisma = new PrismaClient();
@@ -9,7 +10,7 @@ const prisma = new PrismaClient();
 // POST: Login
 router.post('/login', async (req, res) => {
   try {
-    const { email, password } = req.body;
+    const { email, password, totpToken } = req.body;
 
     // 1. Find User
     // @ts-ignore
@@ -24,7 +25,22 @@ router.post('/login', async (req, res) => {
       return res.status(400).json({ error: "Invalid password" });
     }
 
-    // 3. Create Token
+    // 3. Security: Check 2FA
+    if (user.two_factor_enabled) {
+        // If client didn't send a token yet, tell them it's required
+        // The frontend should see this flag and prompt for the code
+        if (!totpToken) {
+            return res.json({ require2fa: true }); 
+        }
+
+        // Verify the token provided by the user
+        const validTotp = authenticator.check(totpToken, user.two_factor_secret as string);
+        if (!validTotp) {
+            return res.status(400).json({ error: "Invalid 2FA Code" });
+        }
+    }
+
+    // 4. Create Token (Only happens if password AND 2FA are valid)
     const token = jwt.sign(
       { id: user.id, role: user.role },
       process.env.JWT_SECRET as string,
@@ -34,6 +50,7 @@ router.post('/login', async (req, res) => {
     res.json({ token, user: { email: user.email, role: user.role } });
 
   } catch (error) {
+    console.error("Login Error:", error);
     res.status(500).json({ error: "Login failed" });
   }
 });

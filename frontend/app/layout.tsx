@@ -3,7 +3,7 @@ import type { Metadata } from "next";
 import { Inter } from "next/font/google";
 import "./globals.css"; // Ensure you have this CSS file
 import { cn } from "@/lib/utils";
-import { LayoutDashboard, FileText, Users, Settings } from "lucide-react";
+import { LayoutDashboard, FileText, Users, Settings, Wallet } from "lucide-react";
 import Link from "next/link";
 
 const inter = Inter({ subsets: ["latin"] });
@@ -40,6 +40,12 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
               <Users className="h-5 w-5 mr-3" />
               Clients
             </Link>
+
+            <Link href="/expenses" className="flex items-center px-4 py-3 text-sm font-medium text-slate-300 hover:text-white hover:bg-slate-800 rounded-md transition-colors">
+              <Wallet className="h-5 w-5 mr-3" /> {/* Ensure Wallet is imported from lucide-react */}
+              Expenses
+            </Link>
+
           </nav>
 
           <div className="mt-auto">

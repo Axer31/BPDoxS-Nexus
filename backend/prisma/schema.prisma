@@ -1,3 +1,5 @@
+// backend/prisma/schema.prisma
+
 generator client {
   provider = "prisma-client-js"
 }
@@ -7,7 +9,10 @@ datasource db {
   url      = env("DATABASE_URL")
 }
 
-// --- SETTINGS ---
+// ==============================
+// 1. SYSTEM CONFIGURATION
+// ==============================
+
 model SystemSetting {
   key         String  @id @db.VarChar(50)
   value       String? @db.Text
@@ -15,45 +20,114 @@ model SystemSetting {
   is_locked   Boolean @default(false)
 }
 
-// --- AUTH ---
-model User {
-  id                Int     @id @default(autoincrement())
-  email             String  @unique
-  password_hash     String
-  role              String  @default("ADMIN")
+// ==============================
+// 2. BANKING & PAYMENTS
+// ==============================
+
+model BankAccount {
+  id                Int      @id @default(autoincrement())
+  label             String   // e.g. "Primary USD", "Euro Account"
+  currency          String   @default("USD")
+  
+  // Core Fields
+  bank_name         String
+  account_holder    String
+  account_number    String
+  
+  // International / Specific Fields
+  routing_number    String?  // ACH (USA) / Fedwire
+  swift_code        String?  // SWIFT/BIC (International)
+  ifsc_code         String?  // India
+  iban              String?  // Europe
+  sort_code         String?  // UK
+  
+  // Address Info
+  branch_address    String?  @db.Text
+  beneficiary_address String? @db.Text
+  
+  // UPI/VPA (India specific)
+  upi_id            String?
+
+  is_default        Boolean  @default(false)
   created_at        DateTime @default(now())
+
+  // Relations
+  invoices          Invoice[]
+  quotations        Quotation[]
 }
 
-// --- CLIENTS ---
+// ==============================
+// 3. AUTHENTICATION & SECURITY
+// ==============================
+
+model User {
+  id                 Int      @id @default(autoincrement())
+  email              String   @unique
+  password_hash      String
+  role               String   @default("ADMIN")
+  
+  // Two-Factor Authentication
+  two_factor_secret  String?
+  two_factor_enabled Boolean  @default(false)
+  backup_codes       Json?
+
+  created_at         DateTime @default(now())
+}
+
+// ==============================
+// 4. CRM (CLIENTS)
+// ==============================
+
 model Client {
   id              Int       @id @default(autoincrement())
   company_name    String
+  contact_person  String?
   tax_id          String?
+  
+  // GST / Tax Logic Fields
   state_code      Int?      
   country         String    @default("India")
+  
   email           String?
   phone           String?
-  addresses       Json?     
-  invoices        Invoice[]
+  addresses       Json?     // { billing: {...}, shipping: {...} }
+  
   created_at      DateTime  @default(now())
+
+  // Relations
+  invoices        Invoice[]
+  quotations      Quotation[]
 }
 
-// --- INVOICES ---
+// ==============================
+// 5. INVOICING MODULE
+// ==============================
+
 model Invoice {
   id              Int      @id @default(autoincrement())
   invoice_number  String   @unique 
+  
+  // Relationships
   client_id       Int
   client          Client   @relation(fields: [client_id], references: [id])
-  status          String   @default("DRAFT")
+  
+  bank_account_id Int?     
+  bank_account    BankAccount? @relation(fields: [bank_account_id], references: [id])
+
+  status          String   @default("DRAFT") // DRAFT, SENT, PAID, OVERDUE
   issue_date      DateTime
   due_date        DateTime?
-  currency        String   @default("INR") // Default Currency
+  currency        String   @default("INR")
   
-  // Updated: Will now store [{ description: "...", hsn: "1234", ... }]
+  // Data
   line_items      Json     
   tax_summary     Json     
   subtotal        Decimal  @db.Decimal(15, 2)
   grand_total     Decimal  @db.Decimal(15, 2)
+  
+  // New Fields
+  remarks         String?  @db.Text
+  is_manual_entry Boolean  @default(false)
   
   created_at      DateTime @default(now())
   updated_at      DateTime @updatedAt
@@ -61,7 +135,59 @@ model Invoice {
   @@map("Invoice")
 }
 
-// --- NEW: EXPENSES ---
+model InvoiceSequence {
+  id          Int    @id @default(autoincrement())
+  fiscal_year String @unique 
+  last_count  Int    @default(0)
+
+  @@map("InvoiceSequence") 
+}
+
+// ==============================
+// 6. QUOTATION SYSTEM
+// ==============================
+
+model Quotation {
+  id                Int      @id @default(autoincrement())
+  quotation_number  String   @unique
+  
+  client_id         Int
+  client            Client   @relation(fields: [client_id], references: [id])
+  
+  bank_account_id   Int?
+  bank_account      BankAccount? @relation(fields: [bank_account_id], references: [id])
+  
+  issue_date        DateTime
+  expiry_date       DateTime?
+  status            String   @default("DRAFT") // DRAFT, SENT, ACCEPTED, REJECTED
+  
+  // Data
+  line_items        Json     // BOQ / Services Offered
+  contract_terms    String?  @db.Text // Contract & Tenure details
+  remarks           String?  @db.Text
+  
+  subtotal          Decimal  @db.Decimal(15, 2)
+  grand_total       Decimal  @db.Decimal(15, 2)
+  currency          String   @default("INR")
+
+  created_at        DateTime @default(now())
+  updated_at        DateTime @updatedAt
+
+  @@map("Quotation")
+}
+
+model QuotationSequence {
+  id          Int    @id @default(autoincrement())
+  fiscal_year String @unique 
+  last_count  Int    @default(0)
+
+  @@map("QuotationSequence") 
+}
+
+// ==============================
+// 7. EXPENSES & UTILS
+// ==============================
+
 model Expense {
   id          Int      @id @default(autoincrement())
   category    String
@@ -73,14 +199,6 @@ model Expense {
   @@map("Expense")
 }
 
-model InvoiceSequence {
-  id          Int    @id @default(autoincrement())
-  fiscal_year String @unique 
-  last_count  Int    @default(0)
-
-  @@map("InvoiceSequence") 
-}
-
 model State {
   code        Int     @id
   name        String
@@ -90,7 +208,7 @@ model State {
 }
 
 model Country {
-  iso_code    String  @id @db.VarChar(5) // e.g., "IN", "US"
+  iso_code    String  @id @db.VarChar(5)
   name        String  @db.VarChar(100)
   currency    String? @db.VarChar(50)
   phone_code  String? @db.VarChar(10)
