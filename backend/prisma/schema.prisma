@@ -88,3 +88,12 @@ model State {
 
   @@map("State")
 }
+
+model Country {
+  iso_code    String  @id @db.VarChar(5) // e.g., "IN", "US"
+  name        String  @db.VarChar(100)
+  currency    String? @db.VarChar(50)
+  phone_code  String? @db.VarChar(10)
+
+  @@map("Country")
+}

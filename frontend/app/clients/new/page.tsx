@@ -6,7 +6,7 @@ import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/com
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Button } from "@/components/ui/button";
-import { Save, Loader2, ArrowLeft } from "lucide-react";
+import { Save, Loader2, ArrowLeft, Globe } from "lucide-react";
 import { useRouter } from 'next/navigation';
 import Link from "next/link";
 
@@ -14,13 +14,14 @@ export default function NewClientPage() {
   const router = useRouter();
   const [loading, setLoading] = useState(false);
   const [states, setStates] = useState<any[]>([]);
+  const [countries, setCountries] = useState<any[]>([]);
   
   // Form State
   const [formData, setFormData] = useState({
     company_name: '',
     tax_id: '',
-    state_code: '', // Vital for GST Logic
-    country: 'India',
+    state_code: '', 
+    country: 'India', 
     email: '',
     phone: '',
     address_street: '',
@@ -28,31 +29,46 @@ export default function NewClientPage() {
     address_zip: ''
   });
 
-  // 1. Fetch States on Load
+  // 1. Fetch Data on Load
   useEffect(() => {
-    const fetchStates = async () => {
+    const fetchData = async () => {
       try {
-        const res = await api.get('/utils/states');
-        setStates(res.data);
+        const [stateRes, countryRes] = await Promise.all([
+            api.get('/utils/states'),
+            api.get('/utils/countries')
+        ]);
+        setStates(stateRes.data);
+        setCountries(countryRes.data);
       } catch (err) {
-        console.error("Failed to load states", err);
+        console.error("Failed to load utilities", err);
       }
     };
-    fetchStates();
+    fetchData();
   }, []);
 
+  // 2. Handle Input Changes
   const handleChange = (e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement>) => {
-    setFormData({ ...formData, [e.target.name]: e.target.value });
+    const { name, value } = e.target;
+    
+    // Logic: If Country changes to something NOT India, auto-set State to "99" (International)
+    if (name === "country") {
+      if (value.trim().toLowerCase() !== "india") {
+        setFormData(prev => ({ ...prev, country: value, state_code: "99" }));
+      } else {
+        setFormData(prev => ({ ...prev, country: value, state_code: "" })); // Reset state if back to India
+      }
+    } else {
+      setFormData(prev => ({ ...prev, [name]: value }));
+    }
   };
 
   const handleSubmit = async () => {
-    // Validation
     if (!formData.company_name) {
       alert("Company Name is required.");
       return;
     }
     if (!formData.state_code) {
-      alert("State Selection is mandatory for Tax Calculation.");
+      alert("State/Region is required for Tax Calculation.");
       return;
     }
 
@@ -60,10 +76,10 @@ export default function NewClientPage() {
     try {
       await api.post('/clients', formData);
       alert("Client created successfully!");
-      router.back(); // Go back to previous page (Invoice or List)
+      router.back(); 
     } catch (error) {
       console.error(error);
-      alert("Failed to create client. Please try again.");
+      alert("Failed to create client.");
     } finally {
       setLoading(false);
     }
@@ -112,36 +128,61 @@ export default function NewClientPage() {
             
             <div className="grid grid-cols-2 gap-4">
               <div className="space-y-2">
-                <Label>GSTIN / Tax ID</Label>
-                <Input 
-                    name="tax_id" 
-                    placeholder="27ABCDE1234F1Z5" 
-                    value={formData.tax_id}
-                    onChange={handleChange} 
-                />
+                <Label>Country</Label>
+                <div className="relative">
+                    <Globe className="absolute left-2.5 top-2.5 h-4 w-4 text-slate-400" />
+                    {/* Country Dropdown */}
+                    <select
+                        name="country"
+                        className="flex h-10 w-full rounded-md border border-input bg-background pl-9 pr-3 py-2 text-sm"
+                        value={formData.country}
+                        onChange={handleChange}
+                    >
+                        <option value="India">India</option>
+                        {countries.filter(c => c.name !== 'India').map(c => (
+                            <option key={c.iso_code} value={c.name}>{c.name}</option>
+                        ))}
+                    </select>
+                </div>
               </div>
+
               <div className="space-y-2">
                 <Label>State (Place of Supply) *</Label>
-                <select 
-                  name="state_code" 
-                  className="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
-                  onChange={handleChange}
-                  value={formData.state_code}
-                >
-                  <option value="">Select State...</option>
-                  {states.map((state) => (
-                    <option key={state.code} value={state.code}>
-                      {state.code} - {state.name}
-                    </option>
-                  ))}
-                </select>
+                {/* Logic: If India, show Dropdown. If International, show Read-only 99 */}
+                {formData.country.toLowerCase() === 'india' ? (
+                    <select 
+                    name="state_code" 
+                    className="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm"
+                    onChange={handleChange}
+                    value={formData.state_code}
+                    >
+                    <option value="">Select State...</option>
+                    {states.map((state) => (
+                        <option key={state.code} value={state.code}>
+                        {state.code} - {state.name}
+                        </option>
+                    ))}
+                    </select>
+                ) : (
+                    <Input 
+                        value="99 - International / Export" 
+                        disabled 
+                        className="bg-slate-100 text-slate-500" 
+                    />
+                )}
               </div>
             </div>
 
             <div className="space-y-2">
-              <Label>Country</Label>
-              <Input name="country" defaultValue="India" onChange={handleChange} />
+                <Label>GSTIN / Tax ID</Label>
+                <Input 
+                    name="tax_id" 
+                    placeholder={formData.country.toLowerCase() === 'india' ? "27ABCDE1234F1Z5" : "International Tax ID (Optional)"}
+                    value={formData.tax_id}
+                    onChange={handleChange} 
+                />
             </div>
+
           </CardContent>
         </Card>
 
@@ -193,7 +234,7 @@ export default function NewClientPage() {
                     />
                    <Input 
                         name="address_zip" 
-                        placeholder="Pincode" 
+                        placeholder="Pincode / Zip" 
                         value={formData.address_zip}
                         onChange={handleChange} 
                     />
