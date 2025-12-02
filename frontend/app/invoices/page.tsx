@@ -10,7 +10,7 @@ import {
 } from "@/components/ui/dropdown-menu";
 import { 
   Plus, MoreHorizontal, CheckCircle, Send, FileEdit, 
-  Loader2, Mail, Download, Pencil, Eye
+  Loader2, Download, Pencil, Eye
 } from "lucide-react";
 import Link from "next/link";
 import { format } from "date-fns";
@@ -32,8 +32,10 @@ export default function InvoiceListPage() {
   const router = useRouter();
   const [invoices, setInvoices] = useState<Invoice[]>([]);
   const [loading, setLoading] = useState(true);
-  const [actionId, setActionId] = useState<number | null>(null);
+  // Track which invoice is currently processing an action (View/Download/Send)
+  const [actionLoadingId, setActionLoadingId] = useState<number | null>(null);
 
+  // --- 1. Load Data ---
   useEffect(() => {
     const fetchInvoices = async () => {
       try {
@@ -48,20 +50,43 @@ export default function InvoiceListPage() {
     fetchInvoices();
   }, []);
 
+  // --- 2. Handlers ---
+
   const handleStatusChange = async (id: number, newStatus: string) => {
     try {
+      // Optimistic Update
       setInvoices(prev => prev.map(inv => 
         inv.id === id ? { ...inv, status: newStatus } : inv
       ));
       await api.patch(`/invoices/${id}/status`, { status: newStatus });
     } catch (e) {
       alert("Failed to update status");
+      // Revert or reload would happen here in a real app
     }
   };
 
+  // VIEW PDF (Opens in new tab securely)
+  const handleViewPdf = async (id: number) => {
+    try {
+      setActionLoadingId(id);
+      const response = await api.get(`/invoices/${id}/pdf`, { 
+        responseType: 'blob' 
+      });
+      const pdfBlob = new Blob([response.data], { type: 'application/pdf' });
+      const pdfUrl = window.URL.createObjectURL(pdfBlob);
+      window.open(pdfUrl, '_blank');
+    } catch (e) {
+      console.error(e);
+      alert("Failed to load PDF.");
+    } finally {
+      setActionLoadingId(null);
+    }
+  };
+
+  // DOWNLOAD PDF (Forces file download)
   const handleDownloadPdf = async (id: number, invoiceNumber: string) => {
     try {
-      setActionId(id);
+      setActionLoadingId(id);
       const response = await api.get(`/invoices/${id}/pdf`, { responseType: 'blob' });
       const url = window.URL.createObjectURL(new Blob([response.data]));
       const link = document.createElement('a');
@@ -74,13 +99,30 @@ export default function InvoiceListPage() {
     } catch (e) {
       alert("Failed to download PDF");
     } finally {
-      setActionId(null);
+      setActionLoadingId(null);
+    }
+  };
+
+  const handleSendEmail = async (invoice: Invoice) => {
+    const emailToUse = prompt("Send invoice to:", invoice.client.email || "");
+    if (!emailToUse) return;
+
+    setActionLoadingId(invoice.id);
+    try {
+      await api.post(`/mail/invoice/${invoice.id}`, { email: emailToUse });
+      alert("Email sent successfully!");
+      handleStatusChange(invoice.id, 'SENT'); // Auto-mark as sent
+    } catch (e: any) {
+      alert("Failed to send email");
+    } finally {
+      setActionLoadingId(null);
     }
   };
 
   return (
     <div className="p-6 space-y-6">
       
+      {/* Header */}
       <div className="flex justify-between items-center">
         <div>
           <h1 className="text-3xl font-bold text-foreground">Invoices</h1>
@@ -93,6 +135,7 @@ export default function InvoiceListPage() {
         </Link>
       </div>
 
+      {/* Invoices Table Card */}
       <Card className="shadow-horizon border-none bg-card">
         <CardHeader>
           <CardTitle>Recent Invoices</CardTitle>
@@ -116,7 +159,11 @@ export default function InvoiceListPage() {
               </TableHeader>
               <TableBody>
                 {invoices.length === 0 && (
-                   <TableRow><TableCell colSpan={6} className="text-center py-10 text-muted-foreground">No invoices found.</TableCell></TableRow>
+                   <TableRow>
+                       <TableCell colSpan={6} className="text-center py-10 text-muted-foreground">
+                            No invoices found.
+                       </TableCell>
+                   </TableRow>
                 )}
                 
                 {invoices.map((inv) => (
@@ -141,40 +188,51 @@ export default function InvoiceListPage() {
                     <TableCell className="text-right">
                        <div className="flex justify-end items-center gap-2">
                            
-                           {/* 1. Download PDF */}
+                           {/* 1. View PDF (Eye) */}
                            <Button 
                              variant="ghost" size="icon" 
                              className="h-8 w-8 hover:text-primary hover:bg-primary/10 rounded-full"
-                             title="Download PDF"
-                             onClick={() => handleDownloadPdf(inv.id, inv.invoice_number)}
-                             disabled={actionId === inv.id}
+                             title="View PDF"
+                             onClick={() => handleViewPdf(inv.id)}
+                             disabled={actionLoadingId === inv.id}
                            >
-                             {actionId === inv.id ? <Loader2 className="w-4 h-4 animate-spin"/> : <Download className="w-4 h-4" />}
+                             {actionLoadingId === inv.id ? <Loader2 className="w-4 h-4 animate-spin"/> : <Eye className="w-4 h-4" />}
                            </Button>
 
-                           {/* 2. Edit Invoice */}
+                           {/* 2. Edit Invoice (Pencil) */}
                            <Button 
                              variant="ghost" size="icon"
                              className="h-8 w-8 hover:text-blue-500 hover:bg-blue-50 dark:hover:bg-blue-900/20 rounded-full"
                              title="Edit Invoice"
-                             onClick={() => router.push(`/invoices/${inv.id}`)} // Redirect to Edit Page
+                             onClick={() => router.push(`/invoices/${inv.id}`)}
                            >
                              <Pencil className="w-4 h-4" />
                            </Button>
 
-                           {/* 3. More Actions Dropdown */}
+                           {/* 3. Send Email */}
+                           <Button 
+                             variant="ghost" size="icon"
+                             className="h-8 w-8 hover:text-purple-500 hover:bg-purple-50 dark:hover:bg-purple-900/20 rounded-full"
+                             title="Send Email"
+                             onClick={() => handleSendEmail(inv)}
+                             disabled={actionLoadingId === inv.id}
+                           >
+                             <Send className="w-4 h-4" />
+                           </Button>
+
+                           {/* 4. More Actions Dropdown */}
                            <DropdownMenu>
                               <DropdownMenuTrigger asChild>
                                 <Button variant="ghost" size="icon" className="h-8 w-8 hover:bg-muted rounded-full">
                                     <MoreHorizontal className="w-4 h-4 text-muted-foreground" />
                                 </Button>
                               </DropdownMenuTrigger>
-                              <DropdownMenuContent align="end" className="w-48">
+                              <DropdownMenuContent align="end" className="w-48 bg-popover">
+                                <DropdownMenuItem onClick={() => handleDownloadPdf(inv.id, inv.invoice_number)}>
+                                    <Download className="w-4 h-4 mr-2" /> Download PDF
+                                </DropdownMenuItem>
                                 <DropdownMenuItem onClick={() => handleStatusChange(inv.id, 'PAID')}>
                                     <CheckCircle className="w-4 h-4 mr-2 text-green-600" /> Mark Paid
-                                </DropdownMenuItem>
-                                <DropdownMenuItem onClick={() => handleStatusChange(inv.id, 'SENT')}>
-                                    <Send className="w-4 h-4 mr-2 text-blue-600" /> Mark Sent
                                 </DropdownMenuItem>
                                 <DropdownMenuItem onClick={() => handleStatusChange(inv.id, 'DRAFT')}>
                                     <FileEdit className="w-4 h-4 mr-2 text-slate-500" /> Mark Draft

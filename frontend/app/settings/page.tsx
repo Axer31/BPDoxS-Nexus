@@ -24,7 +24,7 @@ export default function SettingsPage() {
   }, []);
 
   // Core Handlers
-  const handleProfileChange = (e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement>) => {
+  const handleProfileChange = (e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement | HTMLSelectElement>) => {
     setProfile({ ...profile, [e.target.name]: e.target.value });
   };
 

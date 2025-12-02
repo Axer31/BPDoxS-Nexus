@@ -143,6 +143,16 @@
   .config-option-active {
     @apply ring-2 ring-primary ring-offset-2 ring-offset-background;
   }
+
+  .bg-popover, 
+  [data-radix-popper-content-wrapper] {
+    @apply bg-white/95 dark:bg-[#111C44]/95 backdrop-blur-md border border-border shadow-2xl !important;
+  }
+
+  /* Fix text color inside dropdowns if they are blending in */
+  .text-popover-foreground {
+    @apply text-slate-800 dark:text-white !important;
+  }
 }
 
 @layer utilities {

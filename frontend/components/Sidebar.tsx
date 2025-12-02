@@ -2,19 +2,38 @@
 
 import React from "react";
 import Link from "next/link";
-import { usePathname } from "next/navigation";
+import { usePathname, useRouter } from "next/navigation";
 import { cn } from "@/lib/utils";
-import { useConfigurator } from "@/hooks/use-configurator"; // Ensure this hook exists from previous step
+import { useConfigurator } from "@/hooks/use-configurator";
 import { 
   LayoutDashboard, FileText, Users, Settings, Wallet, 
-  ChevronLeft, ChevronRight, PieChart, Package 
+  ChevronLeft, ChevronRight, Search, Bell, LogOut, User, MoreVertical 
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuLabel,
+  DropdownMenuSeparator,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
+import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 
-export function Sidebar({ className }: { className?: string }) {
+interface SidebarProps {
+  className?: string;
+  hideLogo?: boolean;
+  forceExpand?: boolean; // <--- NEW PROP
+}
+
+export function Sidebar({ className, hideLogo = false, forceExpand = false }: SidebarProps) {
   const pathname = usePathname();
+  const router = useRouter();
   const { sidebarType, setSidebarType } = useConfigurator();
-  const isMini = sidebarType === 'mini';
+  
+  // Logic: If forceExpand is true (Mobile), ignore the 'mini' setting.
+  const isMini = forceExpand ? false : sidebarType === 'mini';
 
   const navItems = [
     { href: "/", label: "Dashboard", icon: LayoutDashboard },
@@ -30,33 +49,43 @@ export function Sidebar({ className }: { className?: string }) {
     return pathname?.startsWith(href);
   };
 
+  const handleLogout = () => {
+    localStorage.removeItem('token');
+    router.push('/login');
+  };
+
   return (
     <aside 
       className={cn(
-        "hidden md:flex flex-col bg-card border-r border-border/50 h-screen sticky top-0 transition-all duration-300 ease-in-out z-40",
+        "flex flex-col bg-card border-r border-border/50 transition-all duration-300 ease-in-out z-40",
+        "h-full md:h-screen sticky top-0",
+        // Width logic handled by isMini, overridden by className if needed
         isMini ? "w-[80px]" : "w-[290px]",
         className
       )}
     >
-      {/* --- LOGO AREA --- */}
-      <div className={cn("h-24 flex items-center px-8", isMini && "justify-center px-0")}>
-         <div className="flex items-center gap-3">
-            <div className="h-10 w-10 bg-primary rounded-xl flex items-center justify-center shadow-lg shadow-primary/30 text-white font-black text-xl shrink-0">
-                IC
-            </div>
-            {!isMini && (
-              <h2 className="text-2xl font-bold tracking-tight text-foreground transition-opacity duration-300">
-                Invoice<span className="text-primary">Core</span>
-              </h2>
-            )}
-         </div>
-      </div>
+      {/* --- 1. LOGO HEADER (Conditional) --- */}
+      {!hideLogo && (
+        <div className={cn("h-20 flex items-center px-6 shrink-0", isMini && "justify-center px-0")}>
+           <div className="flex items-center gap-3">
+              <div className="h-10 w-10 bg-primary rounded-xl flex items-center justify-center shadow-lg shadow-primary/30 text-white font-black text-xl shrink-0">
+                  IC
+              </div>
+              {!isMini && (
+                <h2 className="text-2xl font-bold tracking-tight text-foreground whitespace-nowrap overflow-hidden">
+                  Invoice<span className="text-primary">Core</span>
+                </h2>
+              )}
+           </div>
+        </div>
+      )}
 
-      {/* --- SEPARATOR --- */}
-      <div className="h-px bg-gradient-to-r from-transparent via-border to-transparent mb-6 mx-6" />
+      {!hideLogo && (
+        <div className="h-px bg-gradient-to-r from-transparent via-border to-transparent mb-4 mx-6 shrink-0" />
+      )}
       
-      {/* --- NAVIGATION --- */}
-      <nav className="space-y-2 flex-1 px-4">
+      {/* --- 2. SCROLLABLE NAVIGATION --- */}
+      <nav className="flex-1 overflow-y-auto px-4 space-y-2 scrollbar-thin scrollbar-thumb-muted">
         {navItems.map((item) => {
             const active = isLinkActive(item.href);
             return (
@@ -65,7 +94,7 @@ export function Sidebar({ className }: { className?: string }) {
                     href={item.href} 
                     className={cn(
                         "flex items-center relative group transition-all duration-200 rounded-xl",
-                        isMini ? "justify-center py-4" : "px-5 py-4",
+                        isMini ? "justify-center py-3" : "px-4 py-3",
                         active 
                             ? "bg-primary text-white shadow-md shadow-primary/25 font-semibold" 
                             : "text-muted-foreground hover:bg-muted/50 hover:text-foreground"
@@ -74,35 +103,86 @@ export function Sidebar({ className }: { className?: string }) {
                 >
                     <item.icon className={cn(
                         "shrink-0 transition-transform duration-200", 
-                        isMini ? "h-6 w-6" : "h-5 w-5 mr-4",
-                        active && !isMini && "scale-110"
+                        isMini ? "h-6 w-6" : "h-5 w-5 mr-3",
+                        active && !isMini && "scale-105"
                     )} />
                     
+                    {/* TEXT LABELS: Now visible if forceExpand is true */}
                     {!isMini && (
-                      <span className="truncate">{item.label}</span>
-                    )}
-
-                    {/* Active Indicator for Mini Mode */}
-                    {active && isMini && (
-                      <div className="absolute right-0 top-1/2 -translate-y-1/2 w-1 h-8 bg-white/20 rounded-l-full" />
+                      <span className="truncate text-sm">{item.label}</span>
                     )}
                 </Link>
             );
         })}
       </nav>
 
-      {/* --- TOGGLE BUTTON --- */}
-      <div className="p-4 mt-auto border-t border-border/50">
+      {/* --- 3. BOTTOM SECTION --- */}
+      <div className="mt-auto border-t border-border/50 bg-card/50 backdrop-blur-sm p-4 flex flex-col gap-4 shrink-0">
+        
+        {/* Search */}
+        {!isMini && (
+          <div className="relative">
+              <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
+              <Input 
+                placeholder="Search..." 
+                className="pl-9 h-10 bg-background border-border/50 focus-visible:ring-primary/20 rounded-xl text-sm shadow-sm" 
+              />
+          </div>
+        )}
+
+        {/* Profile Card */}
+        <div className={cn(
+            "flex items-center gap-3 p-2.5 rounded-xl transition-all duration-200",
+            !isMini ? "bg-background border border-border/50 shadow-sm hover:border-primary/30" : "justify-center"
+        )}>
+            <Avatar className="h-9 w-9 border border-border shadow-sm cursor-pointer">
+                <AvatarImage src="" />
+                <AvatarFallback className="bg-gradient-to-br from-primary to-purple-600 text-white font-bold text-xs">AD</AvatarFallback>
+            </Avatar>
+
+            {!isMini && (
+                <div className="flex-1 overflow-hidden min-w-0">
+                    <p className="text-sm font-bold text-foreground truncate">Admin User</p>
+                    <p className="text-xs text-muted-foreground truncate">admin@core.com</p>
+                </div>
+            )}
+
+            {!isMini && (
+                <DropdownMenu>
+                    <DropdownMenuTrigger asChild>
+                        <Button variant="ghost" size="icon" className="h-8 w-8 ml-auto hover:bg-muted rounded-lg shrink-0">
+                            <MoreVertical className="h-4 w-4 text-muted-foreground" />
+                        </Button>
+                    </DropdownMenuTrigger>
+                    <DropdownMenuContent align="end" className="w-56 mb-2 bg-popover">
+                        <DropdownMenuLabel>My Account</DropdownMenuLabel>
+                        <DropdownMenuSeparator />
+                        <DropdownMenuItem onClick={() => router.push('/settings')} className="cursor-pointer">
+                            <User className="mr-2 h-4 w-4" /> Profile
+                        </DropdownMenuItem>
+                        <DropdownMenuItem className="cursor-pointer">
+                            <Bell className="mr-2 h-4 w-4" /> Notifications
+                        </DropdownMenuItem>
+                        <DropdownMenuSeparator />
+                        <DropdownMenuItem onClick={handleLogout} className="text-red-600 focus:text-red-600 cursor-pointer">
+                            <LogOut className="mr-2 h-4 w-4" /> Logout
+                        </DropdownMenuItem>
+                    </DropdownMenuContent>
+                </DropdownMenu>
+            )}
+        </div>
+
+        {/* Collapse Button - HIDDEN on Mobile always */}
         <Button 
           variant="ghost" 
           size="sm" 
-          className="w-full justify-center text-muted-foreground hover:text-primary"
+          className="w-full justify-center text-muted-foreground hover:text-primary hidden md:flex h-8"
           onClick={() => setSidebarType(isMini ? 'default' : 'mini')}
         >
-          {isMini ? <ChevronRight className="h-5 w-5" /> : (
+          {isMini ? <ChevronRight className="h-4 w-4" /> : (
             <div className="flex items-center gap-2">
-              <ChevronLeft className="h-4 w-4" />
-              <span className="text-xs uppercase tracking-widest font-bold">Collapse</span>
+              <ChevronLeft className="h-3 w-3" />
+              <span className="text-[10px] uppercase tracking-widest font-bold">Collapse Sidebar</span>
             </div>
           )}
         </Button>

@@ -6,26 +6,53 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { 
-  Plus, FileText, Loader2, MoreHorizontal, Send, CheckCircle, XCircle, Eye, Pencil
+  Plus, FileText, Loader2, MoreHorizontal, Send, CheckCircle, XCircle, Eye, Pencil, Download, X
 } from "lucide-react";
 import Link from "next/link";
 import { format } from "date-fns";
 import { 
   DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger 
 } from "@/components/ui/dropdown-menu";
+import {
+  Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter, DialogClose
+} from "@/components/ui/dialog";
+import { Badge } from "@/components/ui/badge";
+
+interface QuoteItem {
+  description: string;
+  hsn: string;
+  quantity: number;
+  rate: number;
+  amount: number;
+}
 
 interface Quotation {
   id: number;
   quotation_number: string;
   issue_date: string;
+  expiry_date?: string;
   grand_total: string;
+  subtotal: string;
   status: string;
-  client: { company_name: string };
+  client: { 
+    company_name: string;
+    email?: string;
+    phone?: string;
+    addresses?: any;
+  };
+  line_items: QuoteItem[];
+  services_offered?: string;
+  contract_terms?: string;
+  remarks?: string;
 }
 
 export default function QuotationListPage() {
   const [quotes, setQuotes] = useState<Quotation[]>([]);
   const [loading, setLoading] = useState(true);
+  
+  // Viewport State
+  const [selectedQuote, setSelectedQuote] = useState<Quotation | null>(null);
+  const [isViewOpen, setIsViewOpen] = useState(false);
 
   useEffect(() => {
     const fetchQuotes = async () => {
@@ -42,8 +69,16 @@ export default function QuotationListPage() {
   }, []);
 
   const handleStatusChange = async (id: number, status: string) => {
-      // Ideally add API call here to update status
       alert(`Mark as ${status} (Not implemented yet)`);
+  };
+
+  const openView = (quote: Quotation) => {
+      setSelectedQuote(quote);
+      setIsViewOpen(true);
+  };
+
+  const formatCurrency = (amount: number | string) => {
+      return new Intl.NumberFormat('en-IN', { style: 'currency', currency: 'INR' }).format(Number(amount));
   };
 
   return (
@@ -97,7 +132,7 @@ export default function QuotationListPage() {
                     <TableCell className="font-medium text-muted-foreground">{q.client?.company_name || "Unknown"}</TableCell>
                     <TableCell>{format(new Date(q.issue_date), "dd MMM yyyy")}</TableCell>
                     <TableCell className="font-bold text-foreground">
-                      {new Intl.NumberFormat('en-IN', { style: 'currency', currency: 'INR' }).format(Number(q.grand_total))}
+                      {formatCurrency(q.grand_total)}
                     </TableCell>
                     <TableCell>
                       <span className={`px-2.5 py-1 rounded-full text-xs font-bold uppercase tracking-wide border
@@ -110,13 +145,31 @@ export default function QuotationListPage() {
                     </TableCell>
                     <TableCell className="text-right">
                        <div className="flex justify-end items-center gap-1">
-                          <Button variant="ghost" size="icon" className="h-8 w-8 hover:text-primary"><Eye className="w-4 h-4"/></Button>
+                          
+                          {/* VIEW BUTTON (Triggers Modal) */}
+                          <Button 
+                            variant="ghost" size="icon" 
+                            className="h-8 w-8 hover:text-primary hover:bg-primary/10 rounded-full"
+                            onClick={() => openView(q)}
+                            title="Quick View"
+                          >
+                            <Eye className="w-4 h-4"/>
+                          </Button>
+
+                          <Link href={`/quotations/${q.id}`}>
+                            <Button variant="ghost" size="icon" className="h-8 w-8 hover:text-blue-500 hover:bg-blue-50 dark:hover:bg-blue-900/20 rounded-full">
+                                <Pencil className="w-4 h-4"/>
+                            </Button>
+                          </Link>
+
                           <DropdownMenu>
                               <DropdownMenuTrigger asChild>
-                                <Button variant="ghost" size="icon" className="h-8 w-8"><MoreHorizontal className="w-4 h-4" /></Button>
+                                <Button variant="ghost" size="icon" className="h-8 w-8 hover:bg-muted rounded-full"><MoreHorizontal className="w-4 h-4" /></Button>
                               </DropdownMenuTrigger>
                               <DropdownMenuContent align="end" className="w-48">
-                                <DropdownMenuItem><Pencil className="w-4 h-4 mr-2"/> Edit Quote</DropdownMenuItem>
+                                <DropdownMenuItem onClick={() => window.open(`http://localhost:5000/api/quotations/${q.id}/pdf?download=true`, '_self')}>
+                                    <Download className="w-4 h-4 mr-2"/> Download PDF
+                                </DropdownMenuItem>
                                 <DropdownMenuItem onClick={() => handleStatusChange(q.id, 'SENT')}><Send className="w-4 h-4 mr-2 text-blue-500"/> Mark Sent</DropdownMenuItem>
                                 <DropdownMenuItem onClick={() => handleStatusChange(q.id, 'ACCEPTED')}><CheckCircle className="w-4 h-4 mr-2 text-green-500"/> Convert to Invoice</DropdownMenuItem>
                                 <DropdownMenuItem className="text-red-500"><XCircle className="w-4 h-4 mr-2"/> Delete</DropdownMenuItem>
@@ -131,6 +184,128 @@ export default function QuotationListPage() {
           )}
         </CardContent>
       </Card>
+
+      {/* === VIEWPORT MODAL (QUOTATION DETAILS) === */}
+      <Dialog open={isViewOpen} onOpenChange={setIsViewOpen}>
+        <DialogContent className="max-w-4xl max-h-[90vh] overflow-y-auto bg-card border-border shadow-2xl">
+            <DialogHeader>
+                <div className="flex justify-between items-start pr-8">
+                    <div>
+                        <DialogTitle className="text-2xl font-bold text-primary">
+                            {selectedQuote?.quotation_number}
+                        </DialogTitle>
+                        <DialogDescription>
+                            Issued on {selectedQuote && format(new Date(selectedQuote.issue_date), "dd MMMM yyyy")}
+                        </DialogDescription>
+                    </div>
+                    <Badge variant="outline" className="text-sm px-3 py-1 uppercase">
+                        {selectedQuote?.status}
+                    </Badge>
+                </div>
+            </DialogHeader>
+
+            {selectedQuote && (
+                <div className="space-y-8 py-4">
+                    
+                    {/* 1. Client & Contact Info */}
+                    <div className="grid grid-cols-2 md:grid-cols-4 gap-4 p-4 bg-muted/30 rounded-xl border border-border/50">
+                        <div>
+                            <p className="text-xs font-semibold text-muted-foreground uppercase">Client Name</p>
+                            <p className="text-sm font-bold text-foreground mt-1">{selectedQuote.client.company_name}</p>
+                        </div>
+                        <div>
+                            <p className="text-xs font-semibold text-muted-foreground uppercase">Contact</p>
+                            <p className="text-sm text-foreground mt-1">{selectedQuote.client.phone || "—"}</p>
+                        </div>
+                        <div>
+                            <p className="text-xs font-semibold text-muted-foreground uppercase">Email</p>
+                            <p className="text-sm text-foreground mt-1 truncate" title={selectedQuote.client.email}>{selectedQuote.client.email || "—"}</p>
+                        </div>
+                        <div>
+                            <p className="text-xs font-semibold text-muted-foreground uppercase">Valid Until</p>
+                            <p className="text-sm text-foreground mt-1">
+                                {selectedQuote.expiry_date ? format(new Date(selectedQuote.expiry_date), "dd MMM yyyy") : "—"}
+                            </p>
+                        </div>
+                    </div>
+
+                    {/* 2. BOQ Table */}
+                    <div>
+                        <h3 className="font-bold text-foreground mb-3 flex items-center gap-2">
+                            <FileText className="w-4 h-4 text-primary" /> Bill of Quantities (BOQ)
+                        </h3>
+                        <div className="rounded-lg border border-border overflow-hidden">
+                            <Table>
+                                <TableHeader className="bg-muted/50">
+                                    <TableRow>
+                                        <TableHead className="w-[50%]">Description</TableHead>
+                                        <TableHead className="text-right">Qty</TableHead>
+                                        <TableHead className="text-right">Rate</TableHead>
+                                        <TableHead className="text-right">Amount</TableHead>
+                                    </TableRow>
+                                </TableHeader>
+                                <TableBody>
+                                    {selectedQuote.line_items.map((item, idx) => (
+                                        <TableRow key={idx}>
+                                            <TableCell className="font-medium">{item.description}</TableCell>
+                                            <TableCell className="text-right">{item.quantity}</TableCell>
+                                            <TableCell className="text-right">{formatCurrency(item.rate)}</TableCell>
+                                            <TableCell className="text-right font-bold">{formatCurrency(item.amount)}</TableCell>
+                                        </TableRow>
+                                    ))}
+                                </TableBody>
+                            </Table>
+                        </div>
+                        <div className="flex justify-end mt-4">
+                            <div className="w-1/2 md:w-1/3 space-y-2">
+                                <div className="flex justify-between text-sm">
+                                    <span className="text-muted-foreground">Subtotal</span>
+                                    <span>{formatCurrency(selectedQuote.subtotal)}</span>
+                                </div>
+                                <div className="flex justify-between text-lg font-bold text-primary border-t border-border pt-2">
+                                    <span>Total</span>
+                                    <span>{formatCurrency(selectedQuote.grand_total)}</span>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+
+                    {/* 3. Extra Details (Services, Tenure, Remarks) */}
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                        <div className="space-y-2">
+                            <h4 className="text-sm font-bold text-foreground">Services Offered</h4>
+                            <div className="p-3 bg-muted/20 rounded-lg text-sm text-muted-foreground min-h-[80px] whitespace-pre-wrap border border-border/50">
+                                {selectedQuote.services_offered || "No services specified."}
+                            </div>
+                        </div>
+                        <div className="space-y-2">
+                            <h4 className="text-sm font-bold text-foreground">Contract Tenure / Terms</h4>
+                            <div className="p-3 bg-muted/20 rounded-lg text-sm text-muted-foreground min-h-[80px] whitespace-pre-wrap border border-border/50">
+                                {selectedQuote.contract_terms || "No tenure specified."}
+                            </div>
+                        </div>
+                    </div>
+                    
+                    {selectedQuote.remarks && (
+                        <div className="space-y-2">
+                            <h4 className="text-sm font-bold text-foreground">Remarks</h4>
+                            <div className="p-3 bg-yellow-50 dark:bg-yellow-900/10 text-yellow-800 dark:text-yellow-200 rounded-lg text-sm border border-yellow-200 dark:border-yellow-800/50">
+                                {selectedQuote.remarks}
+                            </div>
+                        </div>
+                    )}
+
+                </div>
+            )}
+
+            <DialogFooter className="sm:justify-start">
+                <DialogClose asChild>
+                    <Button type="button" variant="secondary">Close</Button>
+                </DialogClose>
+            </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
     </div>
   );
 }

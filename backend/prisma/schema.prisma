@@ -159,11 +159,14 @@ model Quotation {
   
   issue_date        DateTime
   expiry_date       DateTime?
-  status            String   @default("DRAFT") // DRAFT, SENT, ACCEPTED, REJECTED
+  status            String   @default("DRAFT")
   
   // Data
-  line_items        Json     // BOQ / Services Offered
-  contract_terms    String?  @db.Text // Contract & Tenure details
+  line_items        Json     // This is your BOQ
+  
+  // NEW FIELDS REQUESTED
+  services_offered  String?  @db.Text // <--- NEW: Services Offered
+  contract_terms    String?  @db.Text // <--- Used for: Contract Tenure
   remarks           String?  @db.Text
   
   subtotal          Decimal  @db.Decimal(15, 2)

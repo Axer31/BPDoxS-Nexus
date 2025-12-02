@@ -10,7 +10,8 @@ interface CreateQuotationDTO {
   subtotal: number;
   grandTotal: number;
   remarks?: string;
-  contractTerms?: string;
+  contractTerms?: string; // Maps to "Contract Tenure"
+  servicesOffered?: string; // Maps to "Services Offered"
   currency?: string;
   bankAccountId?: number;
 }
@@ -73,8 +74,12 @@ export class QuotationService {
           expiry_date: data.expiryDate ? new Date(data.expiryDate) : null,
           status: 'DRAFT',
           line_items: data.items,
-          contract_terms: data.contractTerms,
+          
+          // MAPPED FIELDS
+          contract_terms: data.contractTerms, // "Contract Tenure"
+          services_offered: data.servicesOffered, // "Services Offered"
           remarks: data.remarks,
+          
           subtotal: data.subtotal,
           grand_total: data.grandTotal,
           currency: data.currency || 'INR',
