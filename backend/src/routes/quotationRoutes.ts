@@ -25,4 +25,14 @@ router.post('/', async (req, res) => {
   }
 });
 
+router.delete('/:id', async (req, res) => {
+  try {
+    await QuotationService.deleteQuotation(Number(req.params.id));
+    res.json({ success: true, message: "Quotation deleted" });
+  } catch (error) {
+    console.error(error);
+    res.status(500).json({ error: "Failed to delete quotation" });
+  }
+});
+
 export default router;

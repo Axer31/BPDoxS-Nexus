@@ -6,7 +6,7 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { 
-  Plus, FileText, Loader2, MoreHorizontal, Send, CheckCircle, XCircle, Eye, Pencil, Download, X
+  Plus, FileText, Loader2, MoreHorizontal, Send, CheckCircle, Trash2, Eye, Pencil, Download, X
 } from "lucide-react";
 import Link from "next/link";
 import { format } from "date-fns";
@@ -54,22 +54,36 @@ export default function QuotationListPage() {
   const [selectedQuote, setSelectedQuote] = useState<Quotation | null>(null);
   const [isViewOpen, setIsViewOpen] = useState(false);
 
+  // Load Data
+  const fetchQuotes = async () => {
+    try {
+      const res = await api.get('/quotations');
+      setQuotes(res.data);
+    } catch (err) {
+      console.error("Failed to load quotations", err);
+    } finally {
+      setLoading(false);
+    }
+  };
+
   useEffect(() => {
-    const fetchQuotes = async () => {
-      try {
-        const res = await api.get('/quotations');
-        setQuotes(res.data);
-      } catch (err) {
-        console.error("Failed to load quotations", err);
-      } finally {
-        setLoading(false);
-      }
-    };
     fetchQuotes();
   }, []);
 
+  // Handlers
   const handleStatusChange = async (id: number, status: string) => {
-      alert(`Mark as ${status} (Not implemented yet)`);
+      alert(`Mark as ${status} (Functionality pending in backend)`);
+  };
+
+  const handleDelete = async (id: number) => {
+      if (!confirm("Are you sure you want to delete this quotation?")) return;
+      try {
+          await api.delete(`/quotations/${id}`);
+          // Remove from UI instantly
+          setQuotes(prev => prev.filter(q => q.id !== id));
+      } catch (e) {
+          alert("Failed to delete quotation");
+      }
   };
 
   const openView = (quote: Quotation) => {
@@ -146,7 +160,7 @@ export default function QuotationListPage() {
                     <TableCell className="text-right">
                        <div className="flex justify-end items-center gap-1">
                           
-                          {/* VIEW BUTTON (Triggers Modal) */}
+                          {/* 1. VIEW (Modal) */}
                           <Button 
                             variant="ghost" size="icon" 
                             className="h-8 w-8 hover:text-primary hover:bg-primary/10 rounded-full"
@@ -156,23 +170,33 @@ export default function QuotationListPage() {
                             <Eye className="w-4 h-4"/>
                           </Button>
 
+                          {/* 2. EDIT (Navigate to Edit Page) */}
                           <Link href={`/quotations/${q.id}`}>
-                            <Button variant="ghost" size="icon" className="h-8 w-8 hover:text-blue-500 hover:bg-blue-50 dark:hover:bg-blue-900/20 rounded-full">
+                            <Button 
+                              variant="ghost" size="icon" 
+                              className="h-8 w-8 hover:text-blue-500 hover:bg-blue-50 dark:hover:bg-blue-900/20 rounded-full"
+                              title="Edit Quotation"
+                            >
                                 <Pencil className="w-4 h-4"/>
                             </Button>
                           </Link>
 
+                          {/* 3. MORE ACTIONS */}
                           <DropdownMenu>
                               <DropdownMenuTrigger asChild>
                                 <Button variant="ghost" size="icon" className="h-8 w-8 hover:bg-muted rounded-full"><MoreHorizontal className="w-4 h-4" /></Button>
                               </DropdownMenuTrigger>
-                              <DropdownMenuContent align="end" className="w-48">
+                              <DropdownMenuContent align="end" className="w-48 bg-popover">
                                 <DropdownMenuItem onClick={() => window.open(`http://localhost:5000/api/quotations/${q.id}/pdf?download=true`, '_self')}>
                                     <Download className="w-4 h-4 mr-2"/> Download PDF
                                 </DropdownMenuItem>
                                 <DropdownMenuItem onClick={() => handleStatusChange(q.id, 'SENT')}><Send className="w-4 h-4 mr-2 text-blue-500"/> Mark Sent</DropdownMenuItem>
                                 <DropdownMenuItem onClick={() => handleStatusChange(q.id, 'ACCEPTED')}><CheckCircle className="w-4 h-4 mr-2 text-green-500"/> Convert to Invoice</DropdownMenuItem>
-                                <DropdownMenuItem className="text-red-500"><XCircle className="w-4 h-4 mr-2"/> Delete</DropdownMenuItem>
+                                
+                                {/* DELETE ACTION */}
+                                <DropdownMenuItem className="text-red-500 focus:text-red-600 focus:bg-red-50 dark:focus:bg-red-900/10" onClick={() => handleDelete(q.id)}>
+                                    <Trash2 className="w-4 h-4 mr-2"/> Delete
+                                </DropdownMenuItem>
                               </DropdownMenuContent>
                           </DropdownMenu>
                        </div>
@@ -185,7 +209,7 @@ export default function QuotationListPage() {
         </CardContent>
       </Card>
 
-      {/* === VIEWPORT MODAL (QUOTATION DETAILS) === */}
+      {/* === VIEWPORT MODAL (DETAILS) === */}
       <Dialog open={isViewOpen} onOpenChange={setIsViewOpen}>
         <DialogContent className="max-w-4xl max-h-[90vh] overflow-y-auto bg-card border-border shadow-2xl">
             <DialogHeader>
@@ -207,7 +231,6 @@ export default function QuotationListPage() {
             {selectedQuote && (
                 <div className="space-y-8 py-4">
                     
-                    {/* 1. Client & Contact Info */}
                     <div className="grid grid-cols-2 md:grid-cols-4 gap-4 p-4 bg-muted/30 rounded-xl border border-border/50">
                         <div>
                             <p className="text-xs font-semibold text-muted-foreground uppercase">Client Name</p>
@@ -229,7 +252,6 @@ export default function QuotationListPage() {
                         </div>
                     </div>
 
-                    {/* 2. BOQ Table */}
                     <div>
                         <h3 className="font-bold text-foreground mb-3 flex items-center gap-2">
                             <FileText className="w-4 h-4 text-primary" /> Bill of Quantities (BOQ)
@@ -270,7 +292,6 @@ export default function QuotationListPage() {
                         </div>
                     </div>
 
-                    {/* 3. Extra Details (Services, Tenure, Remarks) */}
                     <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
                         <div className="space-y-2">
                             <h4 className="text-sm font-bold text-foreground">Services Offered</h4>

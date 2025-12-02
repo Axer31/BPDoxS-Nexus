@@ -65,6 +65,8 @@ export class QuotationService {
           numStr = `${numStr}-${nextCount}`;
       }
 
+      
+
       // @ts-ignore
       return await tx.quotation.create({
         data: {
@@ -86,6 +88,14 @@ export class QuotationService {
           bank_account_id: data.bankAccountId
         }
       });
+    });
+  }
+
+  // NEW: Delete Quotation
+  static async deleteQuotation(id: number) {
+    // @ts-ignore
+    return await prisma.quotation.delete({
+      where: { id }
     });
   }
 }
