@@ -396,7 +396,11 @@ export const generateInvoiceHTML = (invoice: any, ownerProfile: any): string => 
             <div class="company-name">${profile.company_name || 'Company Name'}</div>
             <div class="company-name-divider"></div>
             <div class="company-meta-line">Email: ${profile.email || ''} | Phone: ${profile.phone || ''}</div>
-            <div class="company-meta-line">${profile.gstin ? `GSTIN: ${profile.gstin}` : ''}</div>
+            <div class="company-meta-line">
+            ${profile.gstin ? `GSTIN: ${profile.gstin}` : ''} 
+            ${profile.gstin && profile.cin ? ' | ' : ''} 
+            ${profile.cin ? `CIN: ${profile.cin}` : ''}
+            </div>
             <div class="company-address-line" style="white-space: pre-line;">${profile.address || ''}</div>
         </div>
         <div>
@@ -472,9 +476,9 @@ export const generateInvoiceHTML = (invoice: any, ownerProfile: any): string => 
         </div>
 
     </div>
-    <div style="margin: auto; padding: 8px; font-size: 10pt; align-items:center; display:flex; justify-content:center;">
-            <strong>Amount in Words:</strong> ${amountInWords}
-    </div>
+        <div style="margin: auto; padding: 8px; font-size: 10pt; display:flex; justify-content:center;">
+                <p style="text-align: center;"><strong>Amount in Words:</strong> ${amountInWords}</p>
+        </div>
             <div class="sign-container">
                 
                 <div class="sign-wrapper">
@@ -490,7 +494,7 @@ export const generateInvoiceHTML = (invoice: any, ownerProfile: any): string => 
     <div id="footer-line"></div>
     <div><strong>${profile.company_name || ''}</strong></div>
     <div>${profile.address || ''}</div>
-    <div>GSTIN: ${profile.gstin || ''} | Email: ${profile.email || ''} | Phone: ${profile.phone || ''}</div>
+    <div>GSTIN: ${profile.gstin || ''} | CIN: ${profile.cin || ''}</div>
     <div style="margin-top:5px; color:#555;">This is a computer-generated invoice and no signature is required.</div>
 </div>
 

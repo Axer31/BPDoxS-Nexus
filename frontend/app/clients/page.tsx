@@ -5,24 +5,32 @@ import api from "@/lib/api";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
-import { Plus, Search, Loader2, MoreHorizontal, Mail, Phone, MapPin } from "lucide-react";
+import { Plus, Search, Loader2, MoreHorizontal, Mail, Phone, MapPin, Filter } from "lucide-react";
 import Link from "next/link";
 import { Input } from "@/components/ui/input";
 import { 
   DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger 
 } from "@/components/ui/dropdown-menu";
-import { useRouter } from 'next/navigation'; // <--- Import Router
+import { 
+  Select, SelectContent, SelectItem, SelectTrigger, SelectValue 
+} from "@/components/ui/select";
+import { useRouter } from 'next/navigation';
 
 export default function ClientListPage() {
-  const router = useRouter(); // <--- Initialize Router
+  const router = useRouter();
   const [clients, setClients] = useState<any[]>([]);
+  const [filteredClients, setFilteredClients] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
+  
+  // Filters
   const [searchTerm, setSearchTerm] = useState("");
+  const [locationFilter, setLocationFilter] = useState("ALL");
 
   const fetchClients = async () => {
     try {
       const res = await api.get('/clients');
       setClients(res.data);
+      setFilteredClients(res.data);
     } catch (err) {
       console.error("Failed to load clients", err);
     } finally {
@@ -34,6 +42,31 @@ export default function ClientListPage() {
     fetchClients();
   }, []);
 
+  // Filter Logic
+  useEffect(() => {
+    let temp = clients;
+
+    // 1. Search
+    if (searchTerm) {
+        const lower = searchTerm.toLowerCase();
+        temp = temp.filter(c => 
+            c.company_name.toLowerCase().includes(lower) || 
+            (c.email && c.email.toLowerCase().includes(lower))
+        );
+    }
+
+    // 2. Location
+    if (locationFilter !== "ALL") {
+        temp = temp.filter(c => {
+            if (locationFilter === 'DOMESTIC') return c.country === 'India';
+            if (locationFilter === 'INTERNATIONAL') return c.country !== 'India';
+            return true;
+        });
+    }
+
+    setFilteredClients(temp);
+  }, [clients, searchTerm, locationFilter]);
+
   const handleDelete = async (id: number) => {
     if (!confirm("Are you sure? This will delete the client and unlink their invoices.")) return;
     try {
@@ -44,44 +77,52 @@ export default function ClientListPage() {
     }
   };
 
-  const filteredClients = clients.filter(c => 
-    c.company_name.toLowerCase().includes(searchTerm.toLowerCase()) ||
-    (c.email && c.email.toLowerCase().includes(searchTerm.toLowerCase()))
-  );
-
   return (
-    <div className="min-h-screen bg-slate-50 p-8 space-y-6">
+    <div className="p-6 space-y-6">
       
-      <div className="flex justify-between items-center">
+      <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4">
         <div>
-          <h1 className="text-3xl font-bold text-slate-900">Clients</h1>
-          <p className="text-slate-500">Manage your customer database</p>
+          <h1 className="text-3xl font-bold text-foreground">Clients</h1>
+          <p className="text-muted-foreground">Manage your customer database</p>
         </div>
         <Link href="/clients/new">
-          <Button className="bg-slate-900 hover:bg-slate-800">
+          <Button className="bg-primary text-white hover:bg-primary/90 shadow-lg shadow-primary/25">
             <Plus className="w-4 h-4 mr-2" /> Add Client
           </Button>
         </Link>
       </div>
 
-      <Card>
-        <CardHeader className="pb-3">
-          <div className="flex items-center justify-between">
-            <CardTitle>All Clients</CardTitle>
-            <div className="relative w-64">
-                <Search className="absolute left-2 top-2.5 h-4 w-4 text-slate-400" />
-                <Input 
-                    placeholder="Search clients..." 
-                    className="pl-8" 
-                    value={searchTerm}
-                    onChange={(e) => setSearchTerm(e.target.value)}
-                />
-            </div>
+      {/* Filters Bar */}
+      <div className="flex flex-col md:flex-row gap-4 bg-card p-4 rounded-xl border border-border shadow-sm">
+          <div className="relative flex-1">
+              <Search className="absolute left-3 top-2.5 h-4 w-4 text-muted-foreground" />
+              <Input 
+                placeholder="Search clients..." 
+                className="pl-9 bg-background" 
+                value={searchTerm}
+                onChange={(e) => setSearchTerm(e.target.value)}
+              />
           </div>
+          <Select value={locationFilter} onValueChange={setLocationFilter}>
+              <SelectTrigger className="w-[180px]">
+                  <Filter className="w-4 h-4 mr-2 text-muted-foreground" />
+                  <SelectValue placeholder="Location" />
+              </SelectTrigger>
+              <SelectContent>
+                  <SelectItem value="ALL">All Locations</SelectItem>
+                  <SelectItem value="DOMESTIC">Domestic (India)</SelectItem>
+                  <SelectItem value="INTERNATIONAL">International</SelectItem>
+              </SelectContent>
+          </Select>
+      </div>
+
+      <Card className="shadow-horizon border-none bg-card">
+        <CardHeader className="pb-3">
+            <CardTitle>All Clients</CardTitle>
         </CardHeader>
         <CardContent>
           {loading ? (
-            <div className="p-10 text-center text-slate-400 flex justify-center">
+            <div className="p-10 text-center text-muted-foreground flex justify-center">
                 <Loader2 className="animate-spin mr-2" /> Loading records...
             </div>
           ) : (
@@ -90,7 +131,7 @@ export default function ClientListPage() {
                 <TableRow>
                   <TableHead>Company Name</TableHead>
                   <TableHead>Tax ID / GSTIN</TableHead>
-                  <TableHead>State / Location</TableHead>
+                  <TableHead>Location</TableHead>
                   <TableHead>Contact Info</TableHead>
                   <TableHead className="text-right">Actions</TableHead>
                 </TableRow>
@@ -98,28 +139,28 @@ export default function ClientListPage() {
               <TableBody>
                 {filteredClients.length === 0 && (
                    <TableRow>
-                     <TableCell colSpan={5} className="text-center py-10 text-slate-500">
-                        No clients found.
+                     <TableCell colSpan={5} className="text-center py-10 text-muted-foreground">
+                        No clients match your search.
                      </TableCell>
                    </TableRow>
                 )}
                 
                 {filteredClients.map((client) => (
-                  <TableRow key={client.id}>
-                    <TableCell className="font-medium text-slate-900">
+                  <TableRow key={client.id} className="group hover:bg-muted/50">
+                    <TableCell className="font-medium text-foreground">
                         {client.company_name}
                     </TableCell>
-                    <TableCell className="font-mono text-xs text-slate-600">
+                    <TableCell className="font-mono text-xs text-muted-foreground">
                         {client.tax_id || "N/A"}
                     </TableCell>
                     <TableCell>
-                        <div className="flex items-center text-slate-600">
-                            <MapPin className="w-3 h-3 mr-1" />
+                        <div className="flex items-center text-muted-foreground text-sm">
+                            <MapPin className="w-3 h-3 mr-1 text-primary" />
                             {client.state_code === 99 ? "International" : `${client.state_code} - India`}
                         </div>
                     </TableCell>
                     <TableCell>
-                        <div className="flex flex-col gap-1 text-xs text-slate-500">
+                        <div className="flex flex-col gap-1 text-xs text-muted-foreground">
                             {client.email && <span className="flex items-center"><Mail className="w-3 h-3 mr-1"/> {client.email}</span>}
                             {client.phone && <span className="flex items-center"><Phone className="w-3 h-3 mr-1"/> {client.phone}</span>}
                         </div>
@@ -127,11 +168,17 @@ export default function ClientListPage() {
                     <TableCell className="text-right">
                        <DropdownMenu>
                           <DropdownMenuTrigger asChild>
-                            <Button variant="ghost" size="icon"><MoreHorizontal className="w-4 h-4" /></Button>
+                            <Button variant="ghost" size="icon" className="h-8 w-8 hover:bg-muted rounded-full">
+                                <MoreHorizontal className="w-4 h-4 text-muted-foreground" />
+                            </Button>
                           </DropdownMenuTrigger>
                           <DropdownMenuContent align="end">
-                            <DropdownMenuItem onClick={() => router.push(`/clients/${client.id}`)}>Edit Details</DropdownMenuItem>
-                            <DropdownMenuItem className="text-red-600" onClick={() => handleDelete(client.id)}>Delete</DropdownMenuItem>
+                            <DropdownMenuItem onClick={() => router.push(`/clients/${client.id}`)}>
+                                Edit Details
+                            </DropdownMenuItem>
+                            <DropdownMenuItem className="text-red-600 focus:text-red-600 focus:bg-red-50" onClick={() => handleDelete(client.id)}>
+                                Delete
+                            </DropdownMenuItem>
                           </DropdownMenuContent>
                        </DropdownMenu>
                     </TableCell>

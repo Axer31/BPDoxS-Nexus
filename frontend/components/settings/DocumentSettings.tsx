@@ -2,12 +2,15 @@
 
 import React, { useEffect, useState } from "react";
 import api from "@/lib/api";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Button } from "@/components/ui/button";
+import { RotateCcw, Save, Loader2 } from "lucide-react";
+import { useToast } from "@/components/ui/toast-context";
 
 export function DocumentSettings() {
+  const { toast } = useToast();
   const [settings, setSettings] = useState<any>({});
   const [nextInvoiceSeq, setNextInvoiceSeq] = useState("");
   const [nextQuoteSeq, setNextQuoteSeq] = useState("");
@@ -23,48 +26,110 @@ export function DocumentSettings() {
 
   const saveSettings = async () => {
     setLoading(true);
-    try { await api.put('/settings/documents', settings); alert("Saved!"); } 
-    catch (e) { alert("Failed"); } finally { setLoading(false); }
+    try { 
+        await api.put('/settings/documents', settings); 
+        toast("Configuration Saved!", "success");
+    } catch (e) { 
+        toast("Failed to save settings", "error"); 
+    } finally { 
+        setLoading(false); 
+    }
   };
 
   const updateSeq = async (type: string, val: string) => {
-     if(!val) return;
-     try { await api.put('/settings/sequence', { type, next_number: val }); alert("Sequence Updated!"); } 
-     catch (e) { alert("Failed"); }
+     if(!val || isNaN(Number(val))) {
+         return toast("Please enter a valid number", "warning");
+     }
+     
+     try { 
+         await api.put('/settings/sequence', { type, next_number: val }); 
+         toast(`Success! Next ${type.toLowerCase()} will be ${val}`, "success");
+         if (type === 'INVOICE') setNextInvoiceSeq("");
+         else setNextQuoteSeq("");
+     } catch (e) { 
+         toast("Failed to update sequence", "error"); 
+     }
+  };
+
+  const handleReset = async (type: string) => {
+      // Native confirm removed. Action triggers immediately.
+      try {
+          await api.put('/settings/sequence', { type, next_number: "1" });
+          toast(`${type} sequence reset to 1.`, "success");
+      } catch (e) {
+          toast("Reset failed", "error");
+      }
   };
 
   return (
     <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-       <ConfigCard title="Invoice Configuration">
-          <div className="space-y-2"><Label>Number Format</Label><Input name="invoice_format" value={settings.invoice_format || ''} onChange={handleChange} /></div>
-          <div className="space-y-2"><Label>Document Label</Label><Input name="invoice_label" value={settings.invoice_label || ''} onChange={handleChange} /></div>
-          <div className="pt-4 border-t space-y-2">
-             <Label className="text-xs text-muted-foreground">Set Next Sequence Number</Label>
-             <div className="flex gap-2"><Input value={nextInvoiceSeq} onChange={e => setNextInvoiceSeq(e.target.value)} placeholder="e.g. 101" /><Button variant="outline" onClick={() => updateSeq('INVOICE', nextInvoiceSeq)}>Update</Button></div>
-          </div>
-       </ConfigCard>
+       
+       {/* INVOICE CONFIG */}
+       <Card className="shadow-horizon border-none bg-card">
+            <CardHeader>
+                <CardTitle>Invoice Configuration</CardTitle>
+                <CardDescription>Customize formats and numbering.</CardDescription>
+            </CardHeader>
+            <CardContent className="space-y-4">
+                <div className="space-y-2">
+                    <Label>Number Format</Label>
+                    <Input name="invoice_format" value={settings.invoice_format || ''} onChange={handleChange} placeholder="INV/{FY}/{SEQ:3}" />
+                    <p className="text-xs text-muted-foreground">Variables: {'{FY}'}, {'{YYYY}'}, {'{MM}'}, {'{SEQ:3}'}</p>
+                </div>
+                <div className="space-y-2">
+                    <Label>Document Label</Label>
+                    <Input name="invoice_label" value={settings.invoice_label || ''} onChange={handleChange} />
+                </div>
+                
+                <div className="pt-4 border-t space-y-3">
+                    <Label className="text-sm font-semibold">Sequence Management</Label>
+                    <div className="flex items-center gap-2">
+                        <Input value={nextInvoiceSeq} onChange={e => setNextInvoiceSeq(e.target.value)} placeholder="Set next # (e.g. 101)" className="flex-1" />
+                        <Button variant="secondary" onClick={() => updateSeq('INVOICE', nextInvoiceSeq)}>Set</Button>
+                        <Button variant="outline" size="icon" onClick={() => handleReset('INVOICE')} title="Reset to 1">
+                            <RotateCcw className="w-4 h-4 text-red-500" />
+                        </Button>
+                    </div>
+                    <p className="text-xs text-muted-foreground">Current Fiscal Year is auto-detected.</p>
+                </div>
+            </CardContent>
+       </Card>
 
-       <ConfigCard title="Quotation Configuration">
-          <div className="space-y-2"><Label>Number Format</Label><Input name="quotation_format" value={settings.quotation_format || ''} onChange={handleChange} /></div>
-          <div className="space-y-2"><Label>Document Label</Label><Input name="quotation_label" value={settings.quotation_label || ''} onChange={handleChange} /></div>
-          <div className="pt-4 border-t space-y-2">
-             <Label className="text-xs text-muted-foreground">Set Next Sequence Number</Label>
-             <div className="flex gap-2"><Input value={nextQuoteSeq} onChange={e => setNextQuoteSeq(e.target.value)} placeholder="e.g. 50" /><Button variant="outline" onClick={() => updateSeq('QUOTATION', nextQuoteSeq)}>Update</Button></div>
-          </div>
-       </ConfigCard>
+       {/* QUOTATION CONFIG */}
+       <Card className="shadow-horizon border-none bg-card">
+            <CardHeader>
+                <CardTitle>Quotation Configuration</CardTitle>
+                <CardDescription>Customize formats and numbering.</CardDescription>
+            </CardHeader>
+            <CardContent className="space-y-4">
+                <div className="space-y-2">
+                    <Label>Number Format</Label>
+                    <Input name="quotation_format" value={settings.quotation_format || ''} onChange={handleChange} placeholder="QTN/{FY}/{SEQ:3}" />
+                </div>
+                <div className="space-y-2">
+                    <Label>Document Label</Label>
+                    <Input name="quotation_label" value={settings.quotation_label || ''} onChange={handleChange} />
+                </div>
+
+                <div className="pt-4 border-t space-y-3">
+                    <Label className="text-sm font-semibold">Sequence Management</Label>
+                    <div className="flex items-center gap-2">
+                        <Input value={nextQuoteSeq} onChange={e => setNextQuoteSeq(e.target.value)} placeholder="Set next # (e.g. 50)" className="flex-1" />
+                        <Button variant="secondary" onClick={() => updateSeq('QUOTATION', nextQuoteSeq)}>Set</Button>
+                        <Button variant="outline" size="icon" onClick={() => handleReset('QUOTATION')} title="Reset to 1">
+                            <RotateCcw className="w-4 h-4 text-red-500" />
+                        </Button>
+                    </div>
+                </div>
+            </CardContent>
+       </Card>
 
        <div className="lg:col-span-2 flex justify-end">
-          <Button onClick={saveSettings} disabled={loading} className="bg-primary text-white">Save Configurations</Button>
+          <Button onClick={saveSettings} disabled={loading} className="bg-primary text-white min-w-[150px]">
+              {loading ? <Loader2 className="w-4 h-4 animate-spin mr-2" /> : <Save className="w-4 h-4 mr-2" />}
+              Save Configurations
+          </Button>
        </div>
     </div>
   );
-}
-
-function ConfigCard({ title, children }: any) {
-    return (
-        <Card className="shadow-horizon border-none bg-card">
-            <CardHeader><CardTitle>{title}</CardTitle></CardHeader>
-            <CardContent className="space-y-4">{children}</CardContent>
-        </Card>
-    )
 }

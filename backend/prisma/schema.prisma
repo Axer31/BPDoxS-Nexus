@@ -26,12 +26,36 @@ model User {
   password_hash      String
   role               String   @default("ADMIN")
   
-  // Security Features
+// Security Features
   two_factor_secret  String?
   two_factor_enabled Boolean  @default(false)
   backup_codes       Json?
-  
+  reset_token        String?   @unique
+  reset_token_expiry DateTime?
+
+  notifications      Notification[]
+
   created_at         DateTime @default(now())
+
+  
+}
+
+//
+
+model Notification {
+  id          Int      @id @default(autoincrement())
+  user_id     Int
+  user        User     @relation(fields: [user_id], references: [id])
+  
+  title       String
+  message     String?  @db.Text
+  type        String   @default("INFO") // INFO, SUCCESS, WARNING, ERROR
+  is_read     Boolean  @default(false)
+  link        String?  // Optional: URL to redirect (e.g. /invoices/5)
+  
+  created_at  DateTime @default(now())
+
+  @@map("Notification")
 }
 
 // --------------------------------------
@@ -42,7 +66,8 @@ model Client {
   id              Int       @id @default(autoincrement())
   company_name    String
   contact_person  String?
-  tax_id          String?   // GSTIN or VAT ID
+  tax_id          String?
+  cin             String?   // GSTIN or VAT ID
   
   // Location Logic for Tax
   state_code      Int?      // Crucial for IGST vs CGST/SGST logic

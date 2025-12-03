@@ -7,7 +7,7 @@ import { cn } from "@/lib/utils";
 import { useConfigurator } from "@/hooks/use-configurator";
 import { 
   LayoutDashboard, FileText, Users, Settings, Wallet, 
-  ChevronLeft, ChevronRight, Search, Bell, LogOut, User, MoreVertical 
+  ChevronLeft, ChevronRight, Search, BookOpen, LogOut, User, MoreVertical, Shield 
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -24,7 +24,7 @@ import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 interface SidebarProps {
   className?: string;
   hideLogo?: boolean;
-  forceExpand?: boolean; // <--- NEW PROP
+  forceExpand?: boolean; // For Mobile Sheet
 }
 
 export function Sidebar({ className, hideLogo = false, forceExpand = false }: SidebarProps) {
@@ -41,6 +41,7 @@ export function Sidebar({ className, hideLogo = false, forceExpand = false }: Si
     { href: "/quotations", label: "Quotations", icon: FileText },
     { href: "/clients", label: "Clients", icon: Users },
     { href: "/expenses", label: "Expenses", icon: Wallet },
+    { href: "/ledger", label: "Ledger", icon: BookOpen },
     { href: "/settings", label: "Settings", icon: Settings },
   ];
 
@@ -51,6 +52,7 @@ export function Sidebar({ className, hideLogo = false, forceExpand = false }: Si
 
   const handleLogout = () => {
     localStorage.removeItem('token');
+    localStorage.removeItem('user');
     router.push('/login');
   };
 
@@ -119,7 +121,7 @@ export function Sidebar({ className, hideLogo = false, forceExpand = false }: Si
       {/* --- 3. BOTTOM SECTION --- */}
       <div className="mt-auto border-t border-border/50 bg-card/50 backdrop-blur-sm p-4 flex flex-col gap-4 shrink-0">
         
-        {/* Search */}
+        {/* Search (Hidden in Mini) */}
         {!isMini && (
           <div className="relative">
               <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
@@ -154,15 +156,19 @@ export function Sidebar({ className, hideLogo = false, forceExpand = false }: Si
                             <MoreVertical className="h-4 w-4 text-muted-foreground" />
                         </Button>
                     </DropdownMenuTrigger>
-                    <DropdownMenuContent align="end" className="w-56 mb-2 bg-popover">
+                    <DropdownMenuContent align="end" className="w-56 mb-2 bg-popover border-border shadow-xl">
                         <DropdownMenuLabel>My Account</DropdownMenuLabel>
                         <DropdownMenuSeparator />
+                        
+                        {/* LINK TO PROFILE PAGE */}
+                        <DropdownMenuItem onClick={() => router.push('/profile')} className="cursor-pointer">
+                            <User className="mr-2 h-4 w-4" /> Profile & Security
+                        </DropdownMenuItem>
+                        
                         <DropdownMenuItem onClick={() => router.push('/settings')} className="cursor-pointer">
-                            <User className="mr-2 h-4 w-4" /> Profile
+                            <Settings className="mr-2 h-4 w-4" /> System Settings
                         </DropdownMenuItem>
-                        <DropdownMenuItem className="cursor-pointer">
-                            <Bell className="mr-2 h-4 w-4" /> Notifications
-                        </DropdownMenuItem>
+
                         <DropdownMenuSeparator />
                         <DropdownMenuItem onClick={handleLogout} className="text-red-600 focus:text-red-600 cursor-pointer">
                             <LogOut className="mr-2 h-4 w-4" /> Logout

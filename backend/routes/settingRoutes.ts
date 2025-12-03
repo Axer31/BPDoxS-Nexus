@@ -24,8 +24,9 @@ router.get('/company', async (req, res) => {
 // PUT: Update Company Profile (Critical for Tax Engine)
 router.put('/company', async (req, res) => {
   try {
+    // Add 'cin' to the destructuring list
     const { 
-      company_name, address, state_code, gstin, phone, email, 
+      company_name, address, state_code, gstin, cin, phone, email, // <--- Added 'cin'
       bank_details, logo, signature, stamp 
     } = req.body;
 
@@ -34,7 +35,7 @@ router.put('/company', async (req, res) => {
       update: {
         value: company_name,
         json_value: {
-          company_name, address, state_code: Number(state_code), gstin, phone, email,
+          company_name, address, state_code: Number(state_code), gstin, cin, phone, email, // <--- Added 'cin'
           bank_details, logo, signature, stamp
         }
       },
@@ -43,7 +44,7 @@ router.put('/company', async (req, res) => {
         value: company_name,
         is_locked: true,
         json_value: {
-          company_name, address, state_code: Number(state_code), gstin, phone, email,
+          company_name, address, state_code: Number(state_code), gstin, cin, phone, email, // <--- Added 'cin'
           bank_details, logo, signature, stamp
         }
       }

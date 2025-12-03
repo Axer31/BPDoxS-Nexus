@@ -2,6 +2,7 @@ import puppeteer from 'puppeteer-core';
 import { PrismaClient } from '@prisma/client';
 import { generateInvoiceHTML } from './templates/InvoiceTemplate';
 import { generateQuotationHTML } from './templates/QuotationTemplate';
+import { generateLedgerHTML } from './templates/LedgerTemplate';
 
 const prisma = new PrismaClient();
 
@@ -44,6 +45,22 @@ export class PdfService {
     console.log(`[PdfService] Generating HTML for Quotation #${quotation.quotation_number}`);
     const htmlContent = generateQuotationHTML(quotation, ownerSettings);
     
+    return await this.createPdf(htmlContent);
+  }
+
+  // NEW: Generate Ledger PDF
+  static async generateLedgerPdf(transactions: any[], filterLabel: string) {
+    if (!process.env.PUPPETEER_EXECUTABLE_PATH) {
+        throw new Error("PUPPETEER_EXECUTABLE_PATH is missing");
+    }
+
+    const ownerSettings = await prisma.systemSetting.findUnique({ 
+      where: { key: 'COMPANY_PROFILE' } 
+    });
+
+    console.log(`[PdfService] Generating Ledger PDF (${filterLabel})`);
+    const htmlContent = generateLedgerHTML(transactions, filterLabel, ownerSettings);
+
     return await this.createPdf(htmlContent);
   }
 

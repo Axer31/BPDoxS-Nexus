@@ -12,6 +12,7 @@ import {
 } from "@/components/ui/sheet";
 import { Sidebar } from "./Sidebar";
 import { Button } from "@/components/ui/button";
+import { NotificationCenter } from "./NotificationCenter"; // <--- Integrated
 
 export function TopNavbar() {
   const pathname = usePathname();
@@ -77,6 +78,13 @@ export function TopNavbar() {
             {pageTitle.split(' / ').pop()}
           </h1>
         </div>
+
+        {/* --- RIGHT SIDE ACTIONS --- */}
+        <div className="flex items-center gap-2 ml-auto">
+            {/* Notification Center */}
+            <NotificationCenter />
+        </div>
+
       </div>
       
     </header>

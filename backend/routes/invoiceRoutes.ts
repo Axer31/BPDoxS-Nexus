@@ -101,4 +101,14 @@ router.patch('/:id/status', async (req, res) => {
   }
 });
 
+// DELETE: Delete Invoice (NEW)
+router.delete('/:id', async (req, res) => {
+  try {
+    await InvoiceService.deleteInvoice(Number(req.params.id));
+    res.json({ success: true, message: "Invoice deleted successfully" });
+  } catch (error) {
+    res.status(500).json({ error: "Failed to delete invoice" });
+  }
+});
+
 export default router;

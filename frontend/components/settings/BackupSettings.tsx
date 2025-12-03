@@ -53,8 +53,11 @@ export function BackupSettings() {
                 <div className="p-4 border border-red-200 bg-red-50 dark:bg-red-950/10 rounded-lg flex justify-between items-center">
                     <div><h4 className="font-bold text-sm text-red-700">Restore Data</h4></div>
                     <div className="relative">
-                        <input type="file" className="absolute inset-0 opacity-0 cursor-pointer" onChange={restoreBackup} />
-                        <Button variant="destructive" disabled={loading}>{loading ? "..." : "Select File"}</Button>
+                        <input type="file" className="absolute inset-0 opacity-0 cursor-pointer z-10" onChange={restoreBackup} />
+                        {/* FIX: Manually applied red background classes to ensure visibility */}
+                        <Button className="bg-red-600 hover:bg-red-700 text-white shadow-sm" disabled={loading}>
+                            {loading ? <Loader2 className="w-4 h-4 animate-spin" /> : "Select File"}
+                        </Button>
                     </div>
                 </div>
             </CardContent>

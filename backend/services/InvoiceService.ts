@@ -102,6 +102,13 @@ export class InvoiceService {
     });
   }
 
+  // 3. DELETE INVOICE
+  static async deleteInvoice(id: number) {
+    return await prisma.invoice.delete({
+      where: { id }
+    });
+  }
+
   // 2. UPDATE INVOICE
   static async updateInvoice(id: number, data: any) {
     return await prisma.$transaction(async (tx) => {

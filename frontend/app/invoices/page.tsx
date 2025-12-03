@@ -5,16 +5,25 @@ import api from "@/lib/api";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
+import { Input } from "@/components/ui/input";
+import { 
+  Select, SelectContent, SelectItem, SelectTrigger, SelectValue 
+} from "@/components/ui/select";
 import { 
   DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger 
 } from "@/components/ui/dropdown-menu";
 import { 
-  Plus, MoreHorizontal, CheckCircle, Send, FileEdit, 
-  Loader2, Download, Pencil, Eye
+  Plus, MoreHorizontal, CheckCircle, Send, 
+  Loader2, Eye, Pencil, Search, Filter, Calendar as CalendarIcon, X, Share2, Trash2
 } from "lucide-react";
 import Link from "next/link";
-import { format } from "date-fns";
+import { format, isWithinInterval, startOfDay, endOfDay } from "date-fns";
 import { useRouter } from 'next/navigation';
+import { Calendar } from "@/components/ui/calendar";
+import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
+import { cn } from "@/lib/utils";
+import { DateRange } from "react-day-picker";
+import { useToast } from "@/components/ui/toast-context"; // <--- Import Toast Hook
 
 interface Invoice {
   id: number;
@@ -30,19 +39,26 @@ interface Invoice {
 
 export default function InvoiceListPage() {
   const router = useRouter();
+  const { toast } = useToast(); // <--- Initialize Toast
   const [invoices, setInvoices] = useState<Invoice[]>([]);
+  const [filteredInvoices, setFilteredInvoices] = useState<Invoice[]>([]);
   const [loading, setLoading] = useState(true);
-  // Track which invoice is currently processing an action (View/Download/Send)
   const [actionLoadingId, setActionLoadingId] = useState<number | null>(null);
 
-  // --- 1. Load Data ---
+  // Filters
+  const [searchTerm, setSearchTerm] = useState("");
+  const [statusFilter, setStatusFilter] = useState("ALL");
+  const [dateRange, setDateRange] = useState<DateRange | undefined>();
+
   useEffect(() => {
     const fetchInvoices = async () => {
       try {
         const res = await api.get('/invoices');
         setInvoices(res.data);
+        setFilteredInvoices(res.data);
       } catch (err) {
         console.error("Failed to load invoices", err);
+        toast("Failed to load invoices", "error");
       } finally {
         setLoading(false);
       }
@@ -50,80 +66,118 @@ export default function InvoiceListPage() {
     fetchInvoices();
   }, []);
 
-  // --- 2. Handlers ---
+  // Filtering Logic
+  useEffect(() => {
+    let temp = invoices;
 
-  const handleStatusChange = async (id: number, newStatus: string) => {
-    try {
-      // Optimistic Update
-      setInvoices(prev => prev.map(inv => 
-        inv.id === id ? { ...inv, status: newStatus } : inv
-      ));
-      await api.patch(`/invoices/${id}/status`, { status: newStatus });
-    } catch (e) {
-      alert("Failed to update status");
-      // Revert or reload would happen here in a real app
+    // 1. Search
+    if (searchTerm) {
+        const lower = searchTerm.toLowerCase();
+        temp = temp.filter(inv => 
+            inv.invoice_number.toLowerCase().includes(lower) || 
+            inv.client.company_name.toLowerCase().includes(lower)
+        );
     }
-  };
 
-  // VIEW PDF (Opens in new tab securely)
+    // 2. Status
+    if (statusFilter !== "ALL") {
+        temp = temp.filter(inv => inv.status === statusFilter);
+    }
+
+    // 3. Date Range (Calendar)
+    if (dateRange?.from) {
+        temp = temp.filter(inv => {
+            const date = new Date(inv.issue_date);
+            const start = startOfDay(dateRange.from!);
+            const end = dateRange.to ? endOfDay(dateRange.to) : endOfDay(dateRange.from!);
+            return isWithinInterval(date, { start, end });
+        });
+    }
+
+    setFilteredInvoices(temp);
+  }, [invoices, searchTerm, statusFilter, dateRange]);
+
+  // --- HANDLERS ---
+
   const handleViewPdf = async (id: number) => {
     try {
       setActionLoadingId(id);
-      const response = await api.get(`/invoices/${id}/pdf`, { 
-        responseType: 'blob' 
-      });
-      const pdfBlob = new Blob([response.data], { type: 'application/pdf' });
-      const pdfUrl = window.URL.createObjectURL(pdfBlob);
+      const response = await api.get(`/invoices/${id}/pdf`, { responseType: 'blob' });
+      const pdfUrl = window.URL.createObjectURL(new Blob([response.data], { type: 'application/pdf' }));
       window.open(pdfUrl, '_blank');
-    } catch (e) {
-      console.error(e);
-      alert("Failed to load PDF.");
-    } finally {
-      setActionLoadingId(null);
+    } catch (e) { 
+        toast("Failed to load PDF.", "error"); 
+    } finally { 
+        setActionLoadingId(null); 
     }
   };
 
-  // DOWNLOAD PDF (Forces file download)
-  const handleDownloadPdf = async (id: number, invoiceNumber: string) => {
+  const handleDownloadPdf = async (id: number, num: string) => {
     try {
       setActionLoadingId(id);
       const response = await api.get(`/invoices/${id}/pdf`, { responseType: 'blob' });
       const url = window.URL.createObjectURL(new Blob([response.data]));
       const link = document.createElement('a');
       link.href = url;
-      const safeName = invoiceNumber.replace(/\//g, '-');
-      link.setAttribute('download', `invoice-${safeName}.pdf`);
+      link.setAttribute('download', `invoice-${num}.pdf`);
       document.body.appendChild(link);
       link.click();
       link.remove();
-    } catch (e) {
-      alert("Failed to download PDF");
-    } finally {
-      setActionLoadingId(null);
+    } catch (e) { 
+        toast("Failed to download PDF", "error"); 
+    } finally { 
+        setActionLoadingId(null); 
     }
   };
 
-  const handleSendEmail = async (invoice: Invoice) => {
-    const emailToUse = prompt("Send invoice to:", invoice.client.email || "");
-    if (!emailToUse) return;
-
-    setActionLoadingId(invoice.id);
-    try {
-      await api.post(`/mail/invoice/${invoice.id}`, { email: emailToUse });
-      alert("Email sent successfully!");
-      handleStatusChange(invoice.id, 'SENT'); // Auto-mark as sent
-    } catch (e: any) {
-      alert("Failed to send email");
-    } finally {
-      setActionLoadingId(null);
+  // --- MODIFIED: Direct Send (No Prompt) ---
+  const handleSendEmail = async (inv: Invoice) => {
+    if (!inv.client.email) {
+        return toast("Client has no registered email address.", "error");
     }
+
+    setActionLoadingId(inv.id);
+    try { 
+        await api.post(`/mail/invoice/${inv.id}`, { email: inv.client.email }); 
+        toast(`Email sent to ${inv.client.email}`, "success");
+        // Auto-mark as sent if not already paid
+        if (inv.status === 'DRAFT') handleStatusChange(inv.id, 'SENT');
+    } 
+    catch (e) { 
+        toast("Failed to send email", "error"); 
+    } finally { 
+        setActionLoadingId(null); 
+    }
+  };
+
+  const handleStatusChange = async (id: number, status: string) => {
+    try { 
+        await api.patch(`/invoices/${id}/status`, { status }); 
+        // Optimistic Update
+        setInvoices(prev => prev.map(inv => inv.id === id ? { ...inv, status } : inv));
+        toast(`Status updated to ${status}`, "success");
+    } 
+    catch (e) { 
+        toast("Failed to update status", "error"); 
+    }
+  };
+
+  const handleDelete = async (id: number) => {
+      if (!confirm("Are you sure you want to delete this invoice? This action cannot be undone.")) return;
+      try {
+          await api.delete(`/invoices/${id}`);
+          // Optimistic Delete
+          setInvoices(prev => prev.filter(inv => inv.id !== id));
+          toast("Invoice deleted successfully", "success");
+      } catch (e) {
+          toast("Failed to delete invoice", "error");
+      }
   };
 
   return (
     <div className="p-6 space-y-6">
       
-      {/* Header */}
-      <div className="flex justify-between items-center">
+      <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4">
         <div>
           <h1 className="text-3xl font-bold text-foreground">Invoices</h1>
           <p className="text-muted-foreground">Manage your billing history</p>
@@ -135,11 +189,63 @@ export default function InvoiceListPage() {
         </Link>
       </div>
 
-      {/* Invoices Table Card */}
+      {/* Filters Bar */}
+      <div className="flex flex-col md:flex-row gap-4 bg-card p-4 rounded-xl border border-border shadow-sm">
+         <div className="relative flex-1">
+            <Search className="absolute left-3 top-2.5 h-4 w-4 text-muted-foreground" />
+            <Input 
+                placeholder="Search Invoice # or Client..." 
+                className="pl-9 bg-background"
+                value={searchTerm}
+                onChange={e => setSearchTerm(e.target.value)}
+            />
+         </div>
+         
+         <Select value={statusFilter} onValueChange={setStatusFilter}>
+            <SelectTrigger className="w-[160px]">
+                <Filter className="w-4 h-4 mr-2 text-muted-foreground" />
+                <SelectValue placeholder="Status" />
+            </SelectTrigger>
+            <SelectContent>
+                <SelectItem value="ALL">All Status</SelectItem>
+                <SelectItem value="PAID">Paid</SelectItem>
+                <SelectItem value="SENT">Sent</SelectItem>
+                <SelectItem value="SHARED">Shared</SelectItem>
+                <SelectItem value="DRAFT">Draft</SelectItem>
+                <SelectItem value="OVERDUE">Overdue</SelectItem>
+            </SelectContent>
+         </Select>
+
+         {/* Date Range Picker */}
+         <div className="flex items-center gap-2">
+             <Popover>
+                <PopoverTrigger asChild>
+                    <Button variant="outline" className={cn("w-[240px] justify-start text-left font-normal", !dateRange && "text-muted-foreground")}>
+                        <CalendarIcon className="mr-2 h-4 w-4" />
+                        {dateRange?.from ? (
+                            dateRange.to ? (
+                                <>{format(dateRange.from, "LLL dd, y")} - {format(dateRange.to, "LLL dd, y")}</>
+                            ) : format(dateRange.from, "LLL dd, y")
+                        ) : <span>Pick a date range</span>}
+                    </Button>
+                </PopoverTrigger>
+                <PopoverContent className="w-auto p-0" align="end">
+                    <Calendar
+                        initialFocus
+                        mode="range"
+                        defaultMonth={dateRange?.from}
+                        selected={dateRange}
+                        onSelect={setDateRange}
+                        numberOfMonths={2}
+                    />
+                </PopoverContent>
+             </Popover>
+             {dateRange && <Button variant="ghost" size="icon" onClick={() => setDateRange(undefined)}><X className="w-4 h-4" /></Button>}
+         </div>
+      </div>
+
       <Card className="shadow-horizon border-none bg-card">
-        <CardHeader>
-          <CardTitle>Recent Invoices</CardTitle>
-        </CardHeader>
+        <CardHeader><CardTitle>Invoice List</CardTitle></CardHeader>
         <CardContent>
           {loading ? (
             <div className="p-10 text-center text-muted-foreground flex justify-center">
@@ -158,15 +264,11 @@ export default function InvoiceListPage() {
                 </TableRow>
               </TableHeader>
               <TableBody>
-                {invoices.length === 0 && (
-                   <TableRow>
-                       <TableCell colSpan={6} className="text-center py-10 text-muted-foreground">
-                            No invoices found.
-                       </TableCell>
-                   </TableRow>
+                {filteredInvoices.length === 0 && (
+                   <TableRow><TableCell colSpan={6} className="text-center py-10 text-muted-foreground">No invoices match your filters.</TableCell></TableRow>
                 )}
                 
-                {invoices.map((inv) => (
+                {filteredInvoices.map((inv) => (
                   <TableRow key={inv.id} className="group hover:bg-muted/50 transition-colors">
                     <TableCell className="font-bold text-foreground font-mono">{inv.invoice_number}</TableCell>
                     <TableCell className="text-muted-foreground font-medium">{inv.client?.company_name}</TableCell>
@@ -178,65 +280,30 @@ export default function InvoiceListPage() {
                       <span className={`px-2.5 py-1 rounded-full text-xs font-bold uppercase tracking-wide border
                         ${inv.status === 'PAID' ? 'bg-green-100 text-green-700 border-green-200 dark:bg-green-900/30 dark:text-green-400 dark:border-green-800' : ''}
                         ${inv.status === 'SENT' ? 'bg-blue-100 text-blue-700 border-blue-200 dark:bg-blue-900/30 dark:text-blue-400 dark:border-blue-800' : ''}
+                        ${inv.status === 'SHARED' ? 'bg-indigo-100 text-indigo-700 border-indigo-200 dark:bg-indigo-900/30 dark:text-indigo-400 dark:border-indigo-800' : ''}
                         ${inv.status === 'DRAFT' ? 'bg-slate-100 text-slate-700 border-slate-200 dark:bg-slate-800 dark:text-slate-400 dark:border-slate-700' : ''}
+                        ${inv.status === 'OVERDUE' ? 'bg-red-100 text-red-700 border-red-200 dark:bg-red-900/30 dark:text-red-400 dark:border-red-800' : ''}
                       `}>
                         {inv.status}
                       </span>
                     </TableCell>
                     
-                    {/* --- ACTION BUTTONS --- */}
                     <TableCell className="text-right">
                        <div className="flex justify-end items-center gap-2">
-                           
-                           {/* 1. View PDF (Eye) */}
-                           <Button 
-                             variant="ghost" size="icon" 
-                             className="h-8 w-8 hover:text-primary hover:bg-primary/10 rounded-full"
-                             title="View PDF"
-                             onClick={() => handleViewPdf(inv.id)}
-                             disabled={actionLoadingId === inv.id}
-                           >
+                           <Button variant="ghost" size="icon" className="h-8 w-8 hover:text-primary rounded-full" onClick={() => handleViewPdf(inv.id)}>
                              {actionLoadingId === inv.id ? <Loader2 className="w-4 h-4 animate-spin"/> : <Eye className="w-4 h-4" />}
                            </Button>
-
-                           {/* 2. Edit Invoice (Pencil) */}
-                           <Button 
-                             variant="ghost" size="icon"
-                             className="h-8 w-8 hover:text-blue-500 hover:bg-blue-50 dark:hover:bg-blue-900/20 rounded-full"
-                             title="Edit Invoice"
-                             onClick={() => router.push(`/invoices/${inv.id}`)}
-                           >
-                             <Pencil className="w-4 h-4" />
-                           </Button>
-
-                           {/* 3. Send Email */}
-                           <Button 
-                             variant="ghost" size="icon"
-                             className="h-8 w-8 hover:text-purple-500 hover:bg-purple-50 dark:hover:bg-purple-900/20 rounded-full"
-                             title="Send Email"
-                             onClick={() => handleSendEmail(inv)}
-                             disabled={actionLoadingId === inv.id}
-                           >
-                             <Send className="w-4 h-4" />
-                           </Button>
-
-                           {/* 4. More Actions Dropdown */}
+                           <Link href={`/invoices/${inv.id}`}>
+                             <Button variant="ghost" size="icon" className="h-8 w-8 rounded-full"><Pencil className="w-4 h-4" /></Button>
+                           </Link>
                            <DropdownMenu>
-                              <DropdownMenuTrigger asChild>
-                                <Button variant="ghost" size="icon" className="h-8 w-8 hover:bg-muted rounded-full">
-                                    <MoreHorizontal className="w-4 h-4 text-muted-foreground" />
-                                </Button>
-                              </DropdownMenuTrigger>
-                              <DropdownMenuContent align="end" className="w-48 bg-popover">
-                                <DropdownMenuItem onClick={() => handleDownloadPdf(inv.id, inv.invoice_number)}>
-                                    <Download className="w-4 h-4 mr-2" /> Download PDF
-                                </DropdownMenuItem>
-                                <DropdownMenuItem onClick={() => handleStatusChange(inv.id, 'PAID')}>
-                                    <CheckCircle className="w-4 h-4 mr-2 text-green-600" /> Mark Paid
-                                </DropdownMenuItem>
-                                <DropdownMenuItem onClick={() => handleStatusChange(inv.id, 'DRAFT')}>
-                                    <FileEdit className="w-4 h-4 mr-2 text-slate-500" /> Mark Draft
-                                </DropdownMenuItem>
+                              <DropdownMenuTrigger asChild><Button variant="ghost" size="icon" className="h-8 w-8 rounded-full"><MoreHorizontal className="w-4 h-4" /></Button></DropdownMenuTrigger>
+                              <DropdownMenuContent align="end">
+                                <DropdownMenuItem onClick={() => handleDownloadPdf(inv.id, inv.invoice_number)}>Download PDF</DropdownMenuItem>
+                                <DropdownMenuItem onClick={() => handleSendEmail(inv)}>Send Email</DropdownMenuItem>
+                                <DropdownMenuItem onClick={() => handleStatusChange(inv.id, 'PAID')}>Mark Paid</DropdownMenuItem>
+                                <DropdownMenuItem onClick={() => handleStatusChange(inv.id, 'SHARED')}>Mark Shared</DropdownMenuItem>
+                                <DropdownMenuItem className="text-red-600 focus:text-red-600 focus:bg-red-50 dark:focus:bg-red-900/10" onClick={() => handleDelete(inv.id)}> Delete </DropdownMenuItem>
                               </DropdownMenuContent>
                            </DropdownMenu>
                        </div>

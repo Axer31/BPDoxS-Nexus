@@ -19,6 +19,10 @@ import utilRoutes from './routes/utilRoutes';
 import twoFactorRoutes from './routes/2faRoutes';
 import backupRoutes from './routes/backupRoutes';
 import importRoutes from './routes/importRoutes';
+import userRoutes from './routes/userRoutes';
+import ledgerRoutes from './routes/ledgerRoutes';
+import profileRoutes from './routes/profileRoutes';
+import notificationRoutes from './routes/notificationRoutes';
 
 import { authenticateToken } from './middleware/authMiddleware';
 
@@ -57,6 +61,10 @@ app.use('/api/utils', utilRoutes);
 app.use('/api/2fa', twoFactorRoutes);
 app.use('/api/backup', backupRoutes);
 app.use('/api/import', importRoutes);
+app.use('/api/users', userRoutes);
+app.use('/api/ledger', ledgerRoutes);
+app.use('/api/profile', profileRoutes);
+app.use('/api/notifications', notificationRoutes);
 
 // 5. Start Server
 app.listen(PORT, () => {
