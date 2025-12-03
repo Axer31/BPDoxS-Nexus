@@ -1,3 +1,5 @@
+// backend/prisma/schema.prisma
+
 generator client {
   provider = "prisma-client-js"
 }
@@ -7,56 +9,16 @@ datasource db {
   url      = env("DATABASE_URL")
 }
 
-// ==============================
-// 1. SYSTEM CONFIGURATION
-// ==============================
+// --------------------------------------
+// 1. SYSTEM & CONFIGURATION
+// --------------------------------------
 
 model SystemSetting {
-  key         String  @id @db.VarChar(50)
-  value       String? @db.Text
-  json_value  Json?   
-  is_locked   Boolean @default(false)
+  key         String  @id @db.VarChar(50) // e.g., "COMPANY_PROFILE", "SMTP_CONFIG"
+  value       String? @db.Text            // Simple value store
+  json_value  Json?                       // Flexible config store (Logos, Signatures)
+  is_locked   Boolean @default(false)     // Prevent accidental deletion of core settings
 }
-
-// ==============================
-// 2. BANKING & PAYMENTS
-// ==============================
-
-model BankAccount {
-  id                Int      @id @default(autoincrement())
-  label             String   // e.g. "Primary USD", "Euro Account"
-  currency          String   @default("USD")
-  
-  // Core Fields
-  bank_name         String
-  account_holder    String
-  account_number    String
-  
-  // International / Specific Fields
-  routing_number    String?  // ACH (USA) / Fedwire
-  swift_code        String?  // SWIFT/BIC (International)
-  ifsc_code         String?  // India
-  iban              String?  // Europe
-  sort_code         String?  // UK
-  
-  // Address Info
-  branch_address    String?  @db.Text
-  beneficiary_address String? @db.Text
-  
-  // UPI/VPA (India specific)
-  upi_id            String?
-  
-  is_default        Boolean  @default(false)
-  created_at        DateTime @default(now())
-
-  // Relations
-  invoices          Invoice[]
-  quotations        Quotation[]
-}
-
-// ==============================
-// 3. AUTHENTICATION & SECURITY
-// ==============================
 
 model User {
   id                 Int      @id @default(autoincrement())
@@ -64,7 +26,7 @@ model User {
   password_hash      String
   role               String   @default("ADMIN")
   
-  // Two-Factor Authentication
+  // Security Features
   two_factor_secret  String?
   two_factor_enabled Boolean  @default(false)
   backup_codes       Json?
@@ -72,18 +34,18 @@ model User {
   created_at         DateTime @default(now())
 }
 
-// ==============================
-// 4. CRM (CLIENTS)
-// ==============================
+// --------------------------------------
+// 2. CORE CRM & BANKING
+// --------------------------------------
 
 model Client {
   id              Int       @id @default(autoincrement())
   company_name    String
   contact_person  String?
-  tax_id          String?
+  tax_id          String?   // GSTIN or VAT ID
   
-  // GST / Tax Logic Fields
-  state_code      Int?
+  // Location Logic for Tax
+  state_code      Int?      // Crucial for IGST vs CGST/SGST logic
   country         String    @default("India")
   
   email           String?
@@ -97,53 +59,69 @@ model Client {
   quotations      Quotation[]
 }
 
-// ==============================
-// 5. INVOICING MODULE
-// ==============================
+model BankAccount {
+  id                  Int      @id @default(autoincrement())
+  label               String   // e.g. "Primary USD"
+  currency            String   @default("USD")
+  is_default          Boolean  @default(false)
+  
+  // Banking Details
+  bank_name           String
+  account_holder      String
+  account_number      String
+  routing_number      String?  // USA / International
+  swift_code          String?  // SWIFT/BIC
+  ifsc_code           String?  // India
+  iban                String?  // Europe
+  sort_code           String?  // UK
+  branch_address      String?  @db.Text
+  upi_id              String?  // India UPI
+  
+  created_at          DateTime @default(now())
+
+  // Relations
+  invoices            Invoice[]
+  quotations          Quotation[]
+}
+
+// --------------------------------------
+// 3. INVOICING & FINANCE
+// --------------------------------------
 
 model Invoice {
   id              Int      @id @default(autoincrement())
   invoice_number  String   @unique 
   
-  // Relationships
+  // Foreign Keys
   client_id       Int
   client          Client   @relation(fields: [client_id], references: [id])
   
   bank_account_id Int?     
   bank_account    BankAccount? @relation(fields: [bank_account_id], references: [id])
 
+  // Invoice Details
   status          String   @default("DRAFT") // DRAFT, SENT, PAID, OVERDUE
   issue_date      DateTime
   due_date        DateTime?
   currency        String   @default("INR")
   
-  // Data
-  line_items      Json     
-  tax_summary     Json     
+  // JSON Data Blobs for Flexibility
+  line_items      Json     // Array of items { desc, qty, rate, hsn }
+  tax_summary     Json     // Snapshot of tax calculations
+  
+  // Financials
   subtotal        Decimal  @db.Decimal(15, 2)
   grand_total     Decimal  @db.Decimal(15, 2)
   
-  // New Fields
+  // Features
   remarks         String?  @db.Text
-  is_manual_entry Boolean  @default(false)
+  is_manual_entry Boolean  @default(false) // Allows backdating/custom numbers
   
   created_at      DateTime @default(now())
   updated_at      DateTime @updatedAt
   
   @@map("Invoice")
 }
-
-model InvoiceSequence {
-  id          Int    @id @default(autoincrement())
-  fiscal_year String @unique 
-  last_count  Int    @default(0)
-
-  @@map("InvoiceSequence") 
-}
-
-// ==============================
-// 6. QUOTATION SYSTEM
-// ==============================
 
 model Quotation {
   id                Int      @id @default(autoincrement())
@@ -157,15 +135,13 @@ model Quotation {
   
   issue_date        DateTime
   expiry_date       DateTime?
-  status            String   @default("DRAFT") // DRAFT, SENT, ACCEPTED, REJECTED
+  status            String   @default("DRAFT")
   
-  // Data
-  line_items        Json     // BOQ / Services Offered
-  
-  // --- NEW FIELDS FOR DATA ENTRY ---
-  services_offered  String?  @db.Text // Scope of Work / Services
-  contract_terms    String?  @db.Text // Contract Tenure / Terms
-  remarks           String?  @db.Text // Internal or External Notes
+  // Quote Specifics
+  line_items        Json     
+  services_offered  String?  @db.Text 
+  contract_terms    String?  @db.Text 
+  remarks           String?  @db.Text 
   
   subtotal          Decimal  @db.Decimal(15, 2)
   grand_total       Decimal  @db.Decimal(15, 2)
@@ -176,18 +152,6 @@ model Quotation {
 
   @@map("Quotation")
 }
-
-model QuotationSequence {
-  id          Int    @id @default(autoincrement())
-  fiscal_year String @unique 
-  last_count  Int    @default(0)
-
-  @@map("QuotationSequence") 
-}
-
-// ==============================
-// 7. EXPENSES & UTILS
-// ==============================
 
 model Expense {
   id          Int      @id @default(autoincrement())
@@ -200,6 +164,28 @@ model Expense {
   @@map("Expense")
 }
 
+// --------------------------------------
+// 4. UTILITIES & SEQUENCING
+// --------------------------------------
+
+// Handles auto-incrementing numbers like "INV/24-25/005"
+model InvoiceSequence {
+  id          Int    @id @default(autoincrement())
+  fiscal_year String @unique 
+  last_count  Int    @default(0)
+
+  @@map("InvoiceSequence") 
+}
+
+model QuotationSequence {
+  id          Int    @id @default(autoincrement())
+  fiscal_year String @unique 
+  last_count  Int    @default(0)
+
+  @@map("QuotationSequence") 
+}
+
+// Lookup tables for Tax Logic
 model State {
   code        Int     @id
   name        String

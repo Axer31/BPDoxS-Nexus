@@ -2,7 +2,8 @@
 
 import React from "react";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
-import { Image as ImageIcon } from "lucide-react";
+import { Image as ImageIcon, Loader2, Save } from "lucide-react";
+import { Button } from "@/components/ui/button";
 
 interface BrandingSettingsProps {
   profile: any;
@@ -18,7 +19,7 @@ export function BrandingSettings({ profile, handleFileUpload, handleSave, loadin
         <CardTitle>Branding Assets</CardTitle>
         <CardDescription>Upload logos and signatures for your documents.</CardDescription>
       </CardHeader>
-      <CardContent>
+      <CardContent className="space-y-6">
         <div className="grid grid-cols-1 md:grid-cols-3 gap-8">
           <UploadCard 
              title="Company Logo" 
@@ -39,6 +40,14 @@ export function BrandingSettings({ profile, handleFileUpload, handleSave, loadin
              onUpload={(e: any) => handleFileUpload(e, 'stamp')} 
           />
         </div>
+
+        {/* --- ADDED SAVE BUTTON --- */}
+        <div className="flex justify-end pt-4 border-t border-border">
+           <Button onClick={handleSave} disabled={loading} className="bg-primary text-white min-w-[140px]">
+             {loading ? <Loader2 className="w-4 h-4 animate-spin mr-2" /> : <><Save className="w-4 h-4 mr-2" /> Save Changes</>}
+           </Button>
+        </div>
+
       </CardContent>
     </Card>
   );
