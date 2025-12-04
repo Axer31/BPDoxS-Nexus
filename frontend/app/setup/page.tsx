@@ -30,8 +30,9 @@ export default function SetupPage() {
     adminEmail: 'owner@company.com', adminPassword: ''
   });
 
-  const handleSetup = async () => {
-    if (!dbConfig.dbHost || !adminConfig.adminPassword || !adminConfig.adminEmail) {
+const handleSetup = async () => {
+    // UPDATED VALIDATION: Added check for dbPort, dbUser, and dbName
+    if (!dbConfig.dbHost || !dbConfig.dbPort || !dbConfig.dbUser || !dbConfig.dbName || !adminConfig.adminPassword || !adminConfig.adminEmail) {
       return setError("Please fill in all required fields.");
     }
     if (adminConfig.adminPassword.length < 6) {
