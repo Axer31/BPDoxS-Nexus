@@ -1,5 +1,3 @@
-// frontend/components/AppLayout.tsx
-
 "use client";
 
 import React, { useEffect, useState } from "react";
@@ -8,6 +6,7 @@ import { Sidebar } from "@/components/Sidebar";
 import { TopNavbar } from "@/components/TopNavbar";
 import { Configurator } from "@/components/Configurator";
 import { Loader2 } from "lucide-react";
+import axios from "axios"; // Direct axios usage to bypass interceptors
 
 export function AppLayout({ children }: { children: React.ReactNode }) {
   const pathname = usePathname();
@@ -18,24 +17,53 @@ export function AppLayout({ children }: { children: React.ReactNode }) {
   const isAuthPage = pathname === "/login" || 
                      pathname?.startsWith("/forgot-password") || 
                      pathname?.startsWith("/reset-password") ||
-                     pathname === "/setup"; // ADDED: Allow access to the setup installer
+                     pathname === "/setup";
 
   useEffect(() => {
-    // Check for token in LocalStorage
-    const token = typeof window !== 'undefined' ? localStorage.getItem('token') : null;
+    const initCheck = async () => {
+        try {
+            // 1. Check System Status First
+            // We use a raw request to avoid any existing interceptors redirecting us blindly
+            const res = await axios.get('/api/auth/status');
+            const isInstalled = res.data.initialized;
 
-    if (!isAuthPage) {
-        if (!token) {
-            // Accessing protected route without token -> Redirect to Login
-            router.replace('/login');
-        } else {
-            // Has token -> Allow access
+            if (!isInstalled) {
+                // Case A: Not Installed -> Force user to Setup
+                if (pathname !== '/setup') {
+                    router.replace('/setup');
+                }
+            } else {
+                // Case B: Installed
+                
+                // If user is on Setup page but system IS installed -> Force Login
+                if (pathname === '/setup') {
+                    router.replace('/login');
+                    return;
+                }
+
+                // 2. Check Token for Protected Routes
+                const token = localStorage.getItem('token');
+                
+                // If accessing a protected page without a token -> Force Login
+                if (!token && !isAuthPage) {
+                    router.replace('/login');
+                    return;
+                }
+            }
+        } catch (e) {
+            console.error("System check failed - API likely unreachable", e);
+            
+            // CRITICAL FIX:
+            // If the API fails (404/500), we DO NOT redirect to Login.
+            // We assume the system is broken or setting up.
+            // If we are not on a valid page, we might just stay put to avoid loops.
+        } finally {
+            // Always stop loading so the UI renders (even if it's an error state)
             setIsChecking(false);
         }
-    } else {
-        // On auth or setup page -> Allow access immediately
-        setIsChecking(false);
-    }
+    };
+
+    initCheck();
   }, [pathname, isAuthPage, router]);
 
   // Show a simple spinner while verifying auth state to prevent UI flash
@@ -43,6 +71,7 @@ export function AppLayout({ children }: { children: React.ReactNode }) {
       return (
         <div className="h-screen w-full flex items-center justify-center bg-background">
             <Loader2 className="h-10 w-10 animate-spin text-primary" />
+            <span className="sr-only">Loading System...</span>
         </div>
       );
   }
