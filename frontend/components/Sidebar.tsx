@@ -1,11 +1,11 @@
 "use client";
 
-import React from "react";
+import React, { useEffect, useState } from "react";
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 import { cn } from "@/lib/utils";
 import { useConfigurator } from "@/hooks/use-configurator";
-import { useRole } from "@/hooks/use-role"; // <--- Role Hook
+import { useRole } from "@/hooks/use-role";
 import { 
   LayoutDashboard, FileText, Users, Settings, Wallet, 
   ChevronLeft, ChevronRight, Search, BookOpen, LogOut, User, MoreVertical, Activity 
@@ -21,27 +21,51 @@ import {
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
+import api from "@/lib/api"; // Added API import
 
 interface SidebarProps {
   className?: string;
   hideLogo?: boolean;
-  forceExpand?: boolean; // For Mobile Sheet
+  forceExpand?: boolean;
 }
 
 export function Sidebar({ className, hideLogo = false, forceExpand = false }: SidebarProps) {
   const pathname = usePathname();
   const router = useRouter();
   const { sidebarType, setSidebarType } = useConfigurator();
-  
-  // --- PERMISSION LOGIC ---
   const { role, isAdmin, isSudo } = useRole(); 
-  // isAdmin = Sudo OR Admin
-  // isSudo = Sudo Only
+  
+  // START: Dynamic Software Name Logic
+  const [softwareName, setSoftwareName] = useState('InvoiceCore'); // Default fallback
+  const [loadingName, setLoadingName] = useState(true);
 
-  // Logic: If forceExpand is true (Mobile), ignore the 'mini' setting.
+  useEffect(() => {
+    api.get('/settings/software-name')
+      .then(res => {
+        if (res.data?.software_name) {
+          setSoftwareName(res.data.software_name);
+        }
+      })
+      .catch(e => console.error("Failed to fetch software name", e))
+      .finally(() => setLoadingName(false));
+  }, []);
+
+  const getSoftwareNameParts = () => {
+    // Splits the name by capital letters for coloring, e.g., "InvoiceCore" -> ["Invoice", "Core"]
+    const parts = softwareName.split(/([A-Z][a-z]+)/).filter(Boolean);
+    
+    return parts.map((part, index) => {
+        // Apply primary color only to the last part (e.g., "Core") or if it matches the style
+        if (index === parts.length - 1 && part.toLowerCase().endsWith('core')) {
+            return <span key={index} className="text-primary">{part}</span>;
+        }
+        return part;
+    });
+  };
+  // END: Dynamic Software Name Logic
+  
   const isMini = forceExpand ? false : sidebarType === 'mini';
 
-  // Navigation Items with Visibility Control
   const navItems = [
     { href: "/", label: "Dashboard", icon: LayoutDashboard, visible: true },
     { href: "/invoices", label: "Invoices", icon: FileText, visible: true },
@@ -80,11 +104,13 @@ export function Sidebar({ className, hideLogo = false, forceExpand = false }: Si
         <div className={cn("h-20 flex items-center px-6 shrink-0", isMini && "justify-center px-0")}>
            <div className="flex items-center gap-3">
               <div className="h-10 w-10 bg-primary rounded-xl flex items-center justify-center shadow-lg shadow-primary/30 text-white font-black text-xl shrink-0">
-                  IC
+                  {/* Dynamic First Letter */}
+                  {softwareName.charAt(0).toUpperCase()}
               </div>
               {!isMini && (
                 <h2 className="text-2xl font-bold tracking-tight text-foreground whitespace-nowrap overflow-hidden">
-                  Invoice<span className="text-primary">Core</span>
+                  {/* Dynamic Software Name */}
+                  {getSoftwareNameParts()}
                 </h2>
               )}
            </div>
@@ -95,7 +121,7 @@ export function Sidebar({ className, hideLogo = false, forceExpand = false }: Si
         <div className="h-px bg-gradient-to-r from-transparent via-border to-transparent mb-4 mx-6 shrink-0" />
       )}
       
-      {/* --- 2. NAVIGATION --- */}
+      {/* --- 2. NAVIGATION (Unchanged) --- */}
       <nav className="flex-1 overflow-y-auto px-4 space-y-2 scrollbar-thin scrollbar-thumb-muted">
         {navItems.filter(item => item.visible).map((item) => {
             const active = isLinkActive(item.href);
@@ -126,7 +152,7 @@ export function Sidebar({ className, hideLogo = false, forceExpand = false }: Si
         })}
       </nav>
 
-      {/* --- 3. BOTTOM SECTION --- */}
+      {/* --- 3. BOTTOM SECTION (Unchanged) --- */}
       <div className="mt-auto border-t border-border/50 bg-card/50 backdrop-blur-sm p-4 flex flex-col gap-4 shrink-0">
         
         {/* Search (Hidden in Mini) */}
@@ -140,7 +166,7 @@ export function Sidebar({ className, hideLogo = false, forceExpand = false }: Si
           </div>
         )}
 
-        {/* Profile Card */}
+        {/* Profile Card (Unchanged) */}
         <div className={cn(
             "flex items-center gap-3 p-2.5 rounded-xl transition-all duration-200",
             !isMini ? "bg-background border border-border/50 shadow-sm hover:border-primary/30" : "justify-center"

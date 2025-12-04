@@ -1,6 +1,6 @@
 "use client";
 
-import React from "react";
+import React, { useEffect, useState } from "react";
 import { usePathname } from "next/navigation";
 import { Menu } from "lucide-react";
 import { 
@@ -12,11 +12,38 @@ import {
 } from "@/components/ui/sheet";
 import { Sidebar } from "./Sidebar";
 import { Button } from "@/components/ui/button";
-import { NotificationCenter } from "./NotificationCenter"; // <--- Integrated
+import { NotificationCenter } from "./NotificationCenter";
+import api from "@/lib/api"; // Added API import
 
 export function TopNavbar() {
   const pathname = usePathname();
   
+  // START: Dynamic Software Name Logic
+  const [softwareName, setSoftwareName] = useState('InvoiceCore'); // Default fallback
+
+  useEffect(() => {
+    api.get('/settings/software-name')
+      .then(res => {
+        if (res.data?.software_name) {
+          setSoftwareName(res.data.software_name);
+        }
+      })
+      .catch(e => console.error("Failed to fetch software name", e));
+  }, []);
+
+  const getSoftwareNameParts = () => {
+    // Splits the name by capital letters for coloring, e.g., "InvoiceCore" -> ["Invoice", "Core"]
+    const parts = softwareName.split(/([A-Z][a-z]+)/).filter(Boolean);
+    
+    return parts.map((part, index) => {
+        if (index === parts.length - 1 && part.toLowerCase().endsWith('core')) {
+            return <span key={index} className="text-primary">Core</span>;
+        }
+        return part;
+    });
+  };
+  // END: Dynamic Software Name Logic
+
   // Format current path for Breadcrumbs (e.g. "/invoices/new" -> "Invoices / New")
   const pageTitle = pathname === "/" 
     ? "Dashboard" 
@@ -48,10 +75,12 @@ export function TopNavbar() {
              <div className="h-20 flex items-center px-6 shrink-0 border-b border-border/50">
                  <div className="flex items-center gap-3">
                     <div className="h-10 w-10 bg-primary rounded-xl flex items-center justify-center shadow-lg shadow-primary/30 text-white font-black text-xl shrink-0">
-                        IC
+                        {/* Dynamic First Letter */}
+                        {softwareName.charAt(0).toUpperCase()}
                     </div>
                     <h2 className="text-2xl font-bold tracking-tight text-foreground">
-                        Invoice<span className="text-primary">Core</span>
+                        {/* Dynamic Software Name */}
+                        {getSoftwareNameParts()}
                     </h2>
                  </div>
              </div>

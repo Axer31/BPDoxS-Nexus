@@ -143,4 +143,34 @@ router.get('/template/:type', authorize(['SUDO_ADMIN', 'ADMIN']), async (req, re
   res.json({ html: setting?.value || '' });
 });
 
+// ==============================
+// 4. SOFTWARE NAME
+// ==============================
+router.get('/software-name', async (req, res) => {
+  const setting = await prisma.systemSetting.findUnique({ where: { key: 'SOFTWARE_NAME' } });
+  // Default to 'InvoiceCore' if not set
+  res.json({ software_name: setting?.value || 'InvoiceCore' });
+});
+
+// ONLY SUDO CAN EDIT
+router.put('/software-name', authorize(['SUDO_ADMIN']), async (req: Request, res: Response) => {
+  try {
+    const { software_name } = req.body;
+
+    await prisma.systemSetting.upsert({
+      where: { key: 'SOFTWARE_NAME' },
+      update: { value: software_name },
+      create: { key: 'SOFTWARE_NAME', value: software_name, is_locked: true } // Treat this as a core setting
+    });
+
+    const authReq = req as AuthRequest;
+    const ip = req.headers['x-forwarded-for'] || req.socket.remoteAddress;
+    await ActivityService.log(authReq.user.id, "UPDATE_APP_NAME", `Set software name to: ${software_name}`, "SETTINGS", "CORE", ip as string);
+
+    res.json({ success: true });
+  } catch (error) {
+    res.status(500).json({ error: "Failed to update software name" });
+  }
+});
+
 export default router;

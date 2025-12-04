@@ -4,13 +4,14 @@ import React from "react";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Image as ImageIcon, Loader2, Save } from "lucide-react";
 import { Button } from "@/components/ui/button";
+import { SoftwareNameSetting } from './SoftwareNameSetting'; // <-- ADDED IMPORT
 
 interface BrandingSettingsProps {
   profile: any;
   handleFileUpload: (e: React.ChangeEvent<HTMLInputElement>, field: string) => void;
   handleSave: () => void;
   loading: boolean;
-  disabled?: boolean; // <--- New Prop
+  disabled?: boolean; // Controls Read-Only Mode (true for Admins, false for Sudo)
 }
 
 export function BrandingSettings({ profile, handleFileUpload, handleSave, loading, disabled }: BrandingSettingsProps) {
@@ -21,13 +22,19 @@ export function BrandingSettings({ profile, handleFileUpload, handleSave, loadin
         <CardDescription>Upload logos and signatures for your documents.</CardDescription>
       </CardHeader>
       <CardContent className="space-y-6">
+        
+        {/* ADDED: Application Name Setting */}
+        <SoftwareNameSetting /> 
+        
+        <h3 className="font-bold text-lg border-t pt-6">Document Assets</h3>
+
         <div className="grid grid-cols-1 md:grid-cols-3 gap-8">
           <UploadCard 
              title="Company Logo" 
              desc="Top-left of invoice" 
              src={profile.logo} 
              onUpload={(e: any) => handleFileUpload(e, 'logo')}
-             disabled={disabled} // <--- Pass to Child
+             disabled={disabled}
           />
           <UploadCard 
              title="Signature" 
@@ -45,11 +52,11 @@ export function BrandingSettings({ profile, handleFileUpload, handleSave, loadin
           />
         </div>
 
-        {/* Footer Action Area */}
+        {/* Footer Action Area (For Logo/Signature Saves) */}
         <div className="flex justify-end pt-4 border-t border-border">
            {!disabled ? (
                <Button onClick={handleSave} disabled={loading} className="bg-primary text-white min-w-[140px]">
-                 {loading ? <Loader2 className="w-4 h-4 animate-spin mr-2" /> : <><Save className="w-4 h-4 mr-2" /> Save Changes</>}
+                 {loading ? <Loader2 className="w-4 h-4 animate-spin mr-2" /> : <><Save className="w-4 h-4 mr-2" /> Save Asset Changes</>}
                </Button>
            ) : (
                <p className="text-sm text-muted-foreground italic flex items-center">

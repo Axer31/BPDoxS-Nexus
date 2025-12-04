@@ -13,6 +13,7 @@ import path from 'path';
 import os from 'os'; 
 
 const router = Router();
+// Note: This global instance relies on .env being present on server start.
 const prisma = new PrismaClient();
 
 // --- HELPER: Dynamic Email Sender (Uses external SMTP config) ---
@@ -194,13 +195,13 @@ router.post('/reset-password', async (req, res) => {
 router.post('/setup', async (req: Request, res: Response) => {
   // 1. Initial Check: See if a user exists. If so, system is initialized.
   try {
-    // Uses the default prisma instance (which may fail if .env is missing/wrong)
+    // This relies on the global prisma instance which might be configured from the previous run or a temporary check.
     const userCount = await prisma.user.count();
     if (userCount > 0) {
         return res.status(403).json({ error: "System already initialized. Please login." });
     }
   } catch(e) {
-    // Ignore error, proceed to setup if we can't connect/count users.
+    // Expected to fail if no .env or DB is running, which is fine for setup.
   }
 
   const { 
@@ -234,8 +235,7 @@ PUPPETEER_EXECUTABLE_PATH="${puppeteerPath}"
         datasources: { db: { url: dbUrl } }
     });
     
-    // Test connection with new credentials (connect is synchronous, fails on invalid creds)
-    await tempPrisma.$connect(); 
+    await tempPrisma.$connect(); // Test connection with new credentials
 
     // Create Sudo Admin
     const salt = await bcrypt.genSalt(10);
@@ -249,7 +249,17 @@ PUPPETEER_EXECUTABLE_PATH="${puppeteerPath}"
         }
     });
 
+    // ADDED: Initialize the software name setting (Requirement for new feature)
+    await tempPrisma.systemSetting.create({
+        data: {
+            key: 'SOFTWARE_NAME',
+            value: 'InvoiceCore', // Default name
+            is_locked: true
+        }
+    });
+
     // 5. Log Activity
+    // Use the user.id from the newly created user for logging
     await ActivityService.log(user.id, "SYSTEM_INIT", "First-time system initialization and admin creation", "SYSTEM", "INIT", req.socket.remoteAddress as string);
     
     // 6. Success
@@ -264,7 +274,7 @@ PUPPETEER_EXECUTABLE_PATH="${puppeteerPath}"
     if (fs.existsSync(envPath)) {
         fs.unlinkSync(envPath);
     }
-    res.status(500).json({ error: "Database setup failed. Check credentials and ensure MySQL is running." });
+    res.status(500).json({ error: error.message || "Database setup failed. Check credentials and ensure MySQL is running." });
   } finally {
     if (tempPrisma) {
       await tempPrisma.$disconnect();
