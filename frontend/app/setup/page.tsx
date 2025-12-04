@@ -13,7 +13,7 @@ import axios from 'axios';
 import Link from 'next/link';
 
 // Use raw axios as the regular API client relies on a pre-existing token
-const rawApi = axios.create({ baseURL: 'http://localhost:5000/api' });
+const rawApi = axios.create({ baseURL: '/api' });
 
 export default function SetupPage() {
   const router = useRouter();
