@@ -19,7 +19,7 @@ const prisma = new PrismaClient();
 async function sendEmail(to: string, subject: string, text: string) {
   try {
     const setting = await prisma.systemSetting.findUnique({ where: { key: 'SMTP_CONFIG' } });
-    if (!setting?.json_value) return; // Skip if not configured
+    if (!setting?.json_value) return; 
 
     const config = setting.json_value as any;
     const transporter = nodemailer.createTransport({
@@ -55,13 +55,12 @@ router.get('/status', async (req, res) => {
 
   try {
       // Check if DB is reachable and has users
-      // Use a fresh client to avoid cached connection state
       const checkClient = new PrismaClient();
       const count = await checkClient.user.count();
       await checkClient.$disconnect();
       res.json({ initialized: count > 0 });
   } catch (e) {
-      // If connection fails, assume not installed
+      // If connection fails (No DB), assume not installed
       res.json({ initialized: false });
   }
 });
@@ -160,32 +159,32 @@ router.post('/reset-password', async (req, res) => {
 router.post('/setup', async (req: Request, res: Response) => {
   const envPath = path.join(process.cwd(), '.env');
 
+  // 1. Initial Check: Prevent overwrite if already installed
   try {
-    // 1. Prevent overwrite
     if (fs.existsSync(envPath)) {
         require('dotenv').config(); 
         if (process.env.DATABASE_URL) {
             const checkClient = new PrismaClient();
             const userCount = await checkClient.user.count().catch(() => 0);
             await checkClient.$disconnect();
-            if (userCount > 0) return res.status(403).json({ error: "System initialized." });
+            if (userCount > 0) return res.status(403).json({ error: "System already initialized." });
         }
     }
-  } catch(e) {}
+  } catch(e) { /* Ignore errors on fresh install */ }
 
   const { dbHost, dbPort, dbUser, dbPassword, dbName, adminEmail, adminPassword } = req.body;
   let tempPrisma: PrismaClient | null = null;
 
   try {
-    // 2. Encode Credentials
+    // 2. CRITICAL FIX: URL Encode credentials to handle special chars (@, #, etc.)
     const encodedUser = encodeURIComponent(dbUser);
     const encodedPass = encodeURIComponent(dbPassword);
-    const dbUrl = `mysql://${encodedUser}:${encodedPass}@${dbHost}:${dbPort}/${dbName}`;
     
     const newJwtSecret = crypto.randomBytes(32).toString('hex');
     const puppeteerPath = getPuppeteerPath();
+    const dbUrl = `mysql://${encodedUser}:${encodedPass}@${dbHost}:${dbPort}/${dbName}`;
 
-    // 3. Write .env
+    // 3. Write .env File
     const envContent = `
 PORT=5000
 DATABASE_URL="${dbUrl}"
@@ -194,38 +193,49 @@ PUPPETEER_EXECUTABLE_PATH="${puppeteerPath}"
 `;
     fs.writeFileSync(envPath, envContent.trim());
 
-    // 4. Locate Schema (Fix for missing schema error)
+    // 4. Locate Schema File (Fixes the "not found" error)
     const possiblePaths = [
         path.join(process.cwd(), 'prisma', 'schema.prisma'),
-        path.join(__dirname, '..', '..', 'prisma', 'schema.prisma'), // relative to dist
+        path.join(__dirname, '..', '..', 'prisma', 'schema.prisma'), 
         path.join(process.cwd(), 'backend', 'prisma', 'schema.prisma'),
     ];
     const schemaPath = possiblePaths.find(p => fs.existsSync(p));
-    if (!schemaPath) throw new Error("Schema file not found in standard locations.");
 
-    // 5. Push DB Schema
-    console.log(`Applying schema from: ${schemaPath}`);
+    if (!schemaPath) {
+        throw new Error(`Schema not found. Searched: ${possiblePaths.join(', ')}`);
+    }
+
+    // 5. Run Database Schema Push (Use db push instead of migrate)
+    console.log(`Running database setup using schema at: ${schemaPath}`);
     await new Promise<void>((resolve, reject) => {
         exec(`npx prisma db push --accept-data-loss --schema="${schemaPath}"`, { 
             cwd: process.cwd(),
             env: { ...process.env, DATABASE_URL: dbUrl } 
         }, (error, stdout, stderr) => {
             if (error) {
-                console.error(`DB Push Error: ${stderr}`);
-                reject(new Error(`Database init failed: ${stderr}`));
-            } else resolve();
+                console.error(`DB Setup Failed: ${stderr}`);
+                reject(new Error(`Database connection failed: ${stderr}`));
+            } else {
+                resolve();
+            }
         });
     });
 
-    // 6. Create Admin
+    // 6. Connect & Create Admin User
     tempPrisma = new PrismaClient({ datasources: { db: { url: dbUrl } } });
+    
     const salt = await bcrypt.genSalt(10);
     const hashedPassword = await bcrypt.hash(adminPassword, salt);
 
     await tempPrisma.user.create({
-        data: { email: adminEmail, password_hash: hashedPassword, role: 'SUDO_ADMIN' }
+        data: {
+            email: adminEmail,
+            password_hash: hashedPassword,
+            role: 'SUDO_ADMIN'
+        }
     });
 
+    // 7. Initialize Settings
     await tempPrisma.systemSetting.createMany({
         data: [
             { key: 'SOFTWARE_NAME', value: 'InvoiceCore', is_locked: true },
@@ -233,16 +243,17 @@ PUPPETEER_EXECUTABLE_PATH="${puppeteerPath}"
         ]
     });
     
-    res.json({ success: true });
+    // 8. Success
+    res.json({ success: true, message: "Setup complete. Restarting system..." });
 
-    // 7. Restart
-    console.log("Setup successful. Restarting...");
+    // 9. Force Restart
+    console.log("Setup successful. Exiting process to trigger PM2 restart.");
     setTimeout(() => { process.exit(0); }, 1000);
 
   } catch (error: any) {
     console.error("Setup Error:", error);
-    if (fs.existsSync(envPath)) try { fs.unlinkSync(envPath); } catch(e) {}
-    res.status(500).json({ error: error.message || "Setup failed" });
+    if (fs.existsSync(envPath)) { try { fs.unlinkSync(envPath); } catch(e) {} }
+    res.status(500).json({ error: error.message || "Setup failed. Check database credentials." });
   } finally {
     if (tempPrisma) await tempPrisma.$disconnect();
   }

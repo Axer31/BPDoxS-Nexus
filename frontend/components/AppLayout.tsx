@@ -5,15 +5,17 @@ import { usePathname, useRouter } from "next/navigation";
 import { Sidebar } from "@/components/Sidebar";
 import { TopNavbar } from "@/components/TopNavbar";
 import { Configurator } from "@/components/Configurator";
-import { Loader2 } from "lucide-react";
-import axios from "axios"; // Direct axios usage to bypass interceptors
+import { Loader2, ServerCrash } from "lucide-react";
+import { Button } from "@/components/ui/button";
+import axios from "axios";
 
 export function AppLayout({ children }: { children: React.ReactNode }) {
   const pathname = usePathname();
   const router = useRouter();
-  const [isChecking, setIsChecking] = useState(true);
+  
+  // States: 'loading', 'ready', 'error'
+  const [appState, setAppState] = useState<'loading' | 'ready' | 'error'>('loading');
 
-  // Define routes that should NOT have the Sidebar/Navbar
   const isAuthPage = pathname === "/login" || 
                      pathname?.startsWith("/forgot-password") || 
                      pathname?.startsWith("/reset-password") ||
@@ -22,61 +24,79 @@ export function AppLayout({ children }: { children: React.ReactNode }) {
   useEffect(() => {
     const initCheck = async () => {
         try {
-            // 1. Check System Status First
-            // We use a raw request to avoid any existing interceptors redirecting us blindly
-            const res = await axios.get('/api/auth/status');
+            // 1. Force a status check directly (bypassing global interceptors)
+            const res = await axios.get('/api/auth/status', { validateStatus: () => true });
+            
+            // If API is not 200 OK, treat as critical error (Backend down/misconfigured)
+            if (res.status !== 200) {
+                throw new Error(`Backend returned status ${res.status}`);
+            }
+
             const isInstalled = res.data.initialized;
 
+            // 2. Routing Logic
             if (!isInstalled) {
-                // Case A: Not Installed -> Force user to Setup
+                // SYSTEM NOT INSTALLED
                 if (pathname !== '/setup') {
                     router.replace('/setup');
+                    return; // Keep loading while redirect happens
                 }
             } else {
-                // Case B: Installed
-                
-                // If user is on Setup page but system IS installed -> Force Login
+                // SYSTEM INSTALLED
                 if (pathname === '/setup') {
                     router.replace('/login');
-                    return;
+                    return; 
                 }
 
-                // 2. Check Token for Protected Routes
+                // Check Token for Protected Routes
                 const token = localStorage.getItem('token');
-                
-                // If accessing a protected page without a token -> Force Login
                 if (!token && !isAuthPage) {
                     router.replace('/login');
                     return;
                 }
             }
+
+            // If we got here, we are on the correct page
+            setAppState('ready');
+
         } catch (e) {
-            console.error("System check failed - API likely unreachable", e);
-            
-            // CRITICAL FIX:
-            // If the API fails (404/500), we DO NOT redirect to Login.
-            // We assume the system is broken or setting up.
-            // If we are not on a valid page, we might just stay put to avoid loops.
-        } finally {
-            // Always stop loading so the UI renders (even if it's an error state)
-            setIsChecking(false);
+            console.error("Critical System Check Failed:", e);
+            setAppState('error');
         }
     };
 
     initCheck();
   }, [pathname, isAuthPage, router]);
 
-  // Show a simple spinner while verifying auth state to prevent UI flash
-  if (isChecking) {
+  // --- 1. LOADING SCREEN ---
+  if (appState === 'loading') {
       return (
-        <div className="h-screen w-full flex items-center justify-center bg-background">
-            <Loader2 className="h-10 w-10 animate-spin text-primary" />
-            <span className="sr-only">Loading System...</span>
+        <div className="h-screen w-full flex flex-col items-center justify-center bg-background gap-4">
+            <Loader2 className="h-12 w-12 animate-spin text-primary" />
+            <p className="text-muted-foreground animate-pulse">Connecting to InvoiceCore...</p>
         </div>
       );
   }
 
-  // 1. Auth/Setup Page Layout (Clean, Centered Content)
+  // --- 2. ERROR SCREEN (Prevents Login Loop) ---
+  if (appState === 'error') {
+      return (
+        <div className="h-screen w-full flex flex-col items-center justify-center bg-background gap-4 p-4 text-center">
+            <div className="bg-red-100 dark:bg-red-900/20 p-4 rounded-full">
+                <ServerCrash className="h-10 w-10 text-red-600" />
+            </div>
+            <h1 className="text-xl font-bold">Cannot Connect to Server</h1>
+            <p className="text-muted-foreground max-w-md">
+                The backend API is unreachable. Please ensure the Node.js server is running.
+            </p>
+            <Button variant="outline" onClick={() => window.location.reload()}>
+                Retry Connection
+            </Button>
+        </div>
+      );
+  }
+
+  // --- 3. AUTH/SETUP LAYOUT ---
   if (isAuthPage) {
     return (
         <div className="flex-1 flex flex-col h-screen w-full overflow-hidden relative z-10">
@@ -87,18 +107,15 @@ export function AppLayout({ children }: { children: React.ReactNode }) {
     );
   }
 
-  // 2. Protected Dashboard Layout (Sidebar + Navbar + Configurator)
+  // --- 4. DASHBOARD LAYOUT ---
   return (
     <>
       <Sidebar className="hidden md:flex" />
-      
       <div className="flex-1 flex flex-col h-screen overflow-hidden relative z-10">
         <TopNavbar />
-        
         <main className="flex-1 overflow-y-auto p-4 md:p-6 pb-20 scroll-smooth">
             {children}
         </main>
-        
         <Configurator />
       </div>
     </>

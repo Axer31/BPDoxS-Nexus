@@ -10,7 +10,7 @@ const nextConfig: NextConfig = {
   // ADD THIS SECTION:
   experimental: {
     serverActions: {
-      allowedOrigins: ["192.168.1.15", "localhost:3000"] 
+      allowedOrigins: ["192.168.1.15", "localhost:3000", "127.0.0.1", "192.168.1.7"] 
     }
   }
 };

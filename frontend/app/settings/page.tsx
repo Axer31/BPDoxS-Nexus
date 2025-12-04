@@ -11,7 +11,6 @@ import { BankSettings } from '@/components/settings/BankSettings';
 import { EmailSettings } from '@/components/settings/EmailSettings';
 import { TeamSettings } from '@/components/settings/TeamSettings';
 import { BackupSettings } from '@/components/settings/BackupSettings';
-import { TemplateSettings } from '@/components/settings/TemplateSettings';
 import { useRole } from "@/hooks/use-role";
 import { useToast } from "@/components/ui/toast-context";
 
@@ -114,10 +113,6 @@ export default function SettingsPage() {
         
         <TabsContent value="branding">
            <BrandingSettings profile={profile} handleFileUpload={handleFileUpload} handleSave={handleSaveProfile} loading={loading} disabled={isReadOnly} />
-        </TabsContent>
-        
-        <TabsContent value="templates" className="mt-0 h-full">
-          <TemplateSettings disabled={isReadOnly} />
         </TabsContent>
 
         <TabsContent value="documents">
