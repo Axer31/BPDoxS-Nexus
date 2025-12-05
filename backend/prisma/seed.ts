@@ -1,12 +1,36 @@
 import { PrismaClient } from '@prisma/client';
+import axios from 'axios';
 
 const prisma = new PrismaClient();
 
-async function main() {
-  console.log('🌱 Starting Database Seeding...');
+// --- Explicit Type Definitions ---
+interface ApiCurrency {
+  name: string;
+  currency: string;
+  iso2: string;
+  iso3: string;
+}
 
-  // 1. Seed Indian States (Official GST Codes)
-  const states = [
+interface ApiState {
+  name: string;
+  iso3: string;
+  iso2: string;
+  states: { name: string; state_code: string }[];
+}
+
+interface ApiResponse<T> {
+  error: boolean;
+  msg: string;
+  data: T;
+}
+
+async function main() {
+  console.log('🌱 Starting InvoiceCore Database Seeding...');
+
+  // ==================================================
+  // 1. SEED INDIAN STATES (GST CRITICAL - STATIC IDS)
+  // ==================================================
+  const indianStates = [
     { code: 1, name: "Jammu & Kashmir" },
     { code: 2, name: "Himachal Pradesh" },
     { code: 3, name: "Punjab" },
@@ -45,42 +69,87 @@ async function main() {
     { code: 37, name: "Andhra Pradesh" },
     { code: 38, name: "Ladakh" },
     { code: 97, name: "Other Territory" },
-    { code: 99, name: "International / Export" } // Special code for foreign clients
+    { code: 99, name: "International / Export" }
   ];
 
-  console.log(`... Seeding ${states.length} States`);
-  for (const s of states) {
+  console.log(`... Syncing ${indianStates.length} Indian GST States`);
+  for (const s of indianStates) {
     await prisma.state.upsert({
       where: { code: s.code },
-      update: {},
-      create: s
+      update: { name: s.name, country: "India" },
+      create: { code: s.code, name: s.name, country: "India" }
     });
   }
 
-  // 2. Seed Countries (Simplified List)
-  const countries = [
-    { iso_code: "IN", name: "India", currency: "INR", phone_code: "91" },
-    { iso_code: "US", name: "United States", currency: "USD", phone_code: "1" },
-    { iso_code: "CA", name: "Canada", currency: "CAD", phone_code: "1" },
-    { iso_code: "GB", name: "United Kingdom", currency: "GBP", phone_code: "44" },
-    { iso_code: "AU", name: "Australia", currency: "AUD", phone_code: "61" },
-    { iso_code: "AE", name: "United Arab Emirates", currency: "AED", phone_code: "971" },
-    { iso_code: "SG", name: "Singapore", currency: "SGD", phone_code: "65" },
-    { iso_code: "DE", name: "Germany", currency: "EUR", phone_code: "49" },
-    { iso_code: "FR", name: "France", currency: "EUR", phone_code: "33" },
-    { iso_code: "JP", name: "Japan", currency: "JPY", phone_code: "81" }
-  ];
+  // ==================================================
+  // 2. FETCH & SEED COUNTRIES + GLOBAL STATES
+  // ==================================================
+  try {
+    console.log('... Fetching Live Data from CountriesNow API');
+    
+    // Fetch Data Parallelly
+    const [currencyRes, stateRes] = await Promise.all([
+      axios.get<ApiResponse<ApiCurrency[]>>('https://countriesnow.space/api/v0.1/countries/currency'),
+      axios.get<ApiResponse<ApiState[]>>('https://countriesnow.space/api/v0.1/countries/states')
+    ]);
 
-  console.log(`... Seeding ${countries.length} Major Countries`);
-  for (const c of countries) {
-    await prisma.country.upsert({
-      where: { iso_code: c.iso_code },
-      update: {},
-      create: c
+    // Create Maps with explicit types
+    const currencyMap = new Map<string, string>();
+    currencyRes.data.data.forEach((c: ApiCurrency) => {
+        currencyMap.set(c.name, c.currency);
     });
+
+    const isoMap = new Map<string, string>();
+    currencyRes.data.data.forEach((c: ApiCurrency) => {
+        isoMap.set(c.name, c.iso2);
+    });
+
+    const countries = stateRes.data.data;
+    let globalStateIdCounter = 1000; 
+
+    console.log(`... Processing ${countries.length} Countries`);
+
+    for (const country of countries) {
+      // 1. Resolve Country Details
+      const currency = currencyMap.get(country.name) || 'USD';
+      const isoCode = isoMap.get(country.name) || country.iso2 || country.name.substring(0, 2).toUpperCase();
+
+      // 2. Upsert Country
+      if (isoCode && isoCode.length <= 5) {
+        await prisma.country.upsert({
+          where: { iso_code: isoCode },
+          update: { name: country.name, currency: currency },
+          create: { iso_code: isoCode, name: country.name, currency: currency, phone_code: "" }
+        });
+      }
+
+      // 3. Seed States (Skip India)
+      if (country.name !== "India" && country.states.length > 0) {
+        for (const state of country.states) {
+          const existing = await prisma.state.findFirst({
+            where: { name: state.name, country: country.name }
+          });
+
+          if (!existing) {
+            await prisma.state.create({
+              data: {
+                code: globalStateIdCounter++,
+                name: state.name,
+                country: country.name
+              }
+            });
+          }
+        }
+      }
+    }
+    console.log("✅ Global Data Seeded Successfully");
+
+  } catch (error) {
+    console.error("❌ API Sync Failed. Using database defaults.");
+    console.error(error);
   }
 
-  console.log('✅ Seeding Complete.');
+  console.log('✅ Seeding Process Complete.');
 }
 
 main()

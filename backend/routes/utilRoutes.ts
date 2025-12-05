@@ -4,12 +4,19 @@ import { PrismaClient } from '@prisma/client';
 const router = Router();
 const prisma = new PrismaClient();
 
-// GET: Fetch All States
+// GET: Fetch States (Dynamic Filter)
 router.get('/states', async (req: Request, res: Response) => {
   try {
+    const { country } = req.query;
+    
+    // Default to India if no country provided to keep payload small
+    const filterCountry = country ? String(country) : 'India';
+
     const states = await prisma.state.findMany({
+      where: { country: filterCountry },
       orderBy: { name: 'asc' }
     });
+    
     res.json(states);
   } catch (error) {
     console.error("Error fetching states:", error);

@@ -24,14 +24,31 @@ interface TaxResult {
 export class TaxService {
   static async calculateTaxType(clientStateCode: number, clientCountry: string = 'India'): Promise<TaxResult> {
     
-    // 1. Fetch Owner Settings to compare state
+    // ---------------------------------------------------------
+    // 1. PRIORITY CHECK: Export / International Client
+    // ---------------------------------------------------------
+    // This must run BEFORE checking Company Profile. 
+    // If the client is not from India, it is a Zero-Rated Export (0% Tax).
+    // This fixes the bug where missing owner settings forced IGST on foreigners.
+    if (clientCountry && clientCountry.trim().toLowerCase() !== 'india') {
+      return {
+        taxType: 'NONE',
+        gstRate: 0,
+        breakdown: { cgst: 0, sgst: 0, igst: 0 }
+      };
+    }
+
+    // ---------------------------------------------------------
+    // 2. Fetch Owner Settings (Required only for Domestic Tax)
+    // ---------------------------------------------------------
     const settings = await prisma.systemSetting.findUnique({
       where: { key: 'COMPANY_PROFILE' }
     });
 
-    // Default to IGST if settings are missing (failsafe)
+    // Failsafe: If Company Profile is missing/incomplete, default to IGST 18%
+    // This ensures we don't under-tax domestic clients if config is broken.
     if (!settings || !settings.json_value) {
-      console.warn("COMPANY_PROFILE missing. Defaulting to IGST 18%.");
+      console.warn("TaxService: COMPANY_PROFILE missing. Defaulting to IGST 18%.");
       return {
         taxType: 'IGST',
         gstRate: 18.0,
@@ -40,19 +57,13 @@ export class TaxService {
     }
 
     const ownerProfile = settings.json_value as unknown as CompanyProfile;
-    const ownerStateCode = ownerProfile.state_code;
+    const ownerStateCode = Number(ownerProfile.state_code);
 
-    // 2. Logic: Export (Foreign Client)
-    // If country is NOT India, it is a Zero-Rated Export
-    if (clientCountry && clientCountry.toLowerCase() !== 'india') {
-      return {
-        taxType: 'NONE',
-        gstRate: 0,
-        breakdown: { cgst: 0, sgst: 0, igst: 0 }
-      };
-    }
-
-    // 3. Logic: Same State = CGST + SGST (Intra-state)
+    // ---------------------------------------------------------
+    // 3. Domestic Logic (India)
+    // ---------------------------------------------------------
+    
+    // Case A: Same State = CGST + SGST (Intra-state)
     if (ownerStateCode === clientStateCode) {
       return {
         taxType: 'CGST_SGST',
@@ -61,7 +72,7 @@ export class TaxService {
       };
     }
 
-    // 4. Logic: Different State = IGST (Inter-state)
+    // Case B: Different State = IGST (Inter-state)
     return {
       taxType: 'IGST',
       gstRate: 18.0,
