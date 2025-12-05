@@ -66,11 +66,13 @@ router.get('/stats', async (req, res) => {
         select: { date: true, amount: true }
     });
 
-    const statsMap = new Map<string, { revenue: number; expense: number; pending: number }>();
+    // Updated Map to track count for Avg Sale calculation
+    const statsMap = new Map<string, { revenue: number; expense: number; pending: number; count: number }>();
 
     allInvoices.forEach(inv => {
         const month = format(new Date(inv.issue_date), 'MMM yyyy');
-        const existing = statsMap.get(month) || { revenue: 0, expense: 0, pending: 0 };
+        // Initialize with count: 0
+        const existing = statsMap.get(month) || { revenue: 0, expense: 0, pending: 0, count: 0 };
         
         // FIX: Handle Decimal Conversion inside loop
         const amount = Number(inv.grand_total?.toString() || 0);
@@ -78,6 +80,7 @@ router.get('/stats', async (req, res) => {
 
         if (status === 'PAID') {
             existing.revenue += amount;
+            existing.count += 1; // Increment paid invoice count
         } else {
             existing.pending += amount;
         }
@@ -86,7 +89,8 @@ router.get('/stats', async (req, res) => {
 
     allExpenses.forEach(exp => {
         const month = format(new Date(exp.date), 'MMM yyyy');
-        const existing = statsMap.get(month) || { revenue: 0, expense: 0, pending: 0 };
+        // Initialize with count: 0
+        const existing = statsMap.get(month) || { revenue: 0, expense: 0, pending: 0, count: 0 };
         // FIX: Handle Decimal Conversion
         existing.expense += Number(exp.amount?.toString() || 0);
         statsMap.set(month, existing);
@@ -97,7 +101,9 @@ router.get('/stats', async (req, res) => {
         revenue: val.revenue,
         expense: val.expense,
         pending: val.pending,
-        balance: val.revenue - val.expense
+        balance: val.revenue - val.expense,
+        // Calculate Avg Sale (Revenue / Count of Paid Invoices), prevent div by zero
+        avgSale: val.count > 0 ? (val.revenue / val.count) : 0 
     }));
 
     // 4. TOP UNPAID (Tables)

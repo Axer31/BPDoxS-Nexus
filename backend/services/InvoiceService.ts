@@ -34,12 +34,12 @@ export class InvoiceService {
     }
   }
 
-  // --- NEW: Get Shared Invoices (Sent/Paid/Overdue) ---
+// --- UPDATE THIS METHOD ---
   static async getSharedInvoices() {
     return await prisma.invoice.findMany({
       where: {
         status: {
-          not: 'DRAFT' 
+          notIn: ['DRAFT', 'PAID', 'Paid'] // Fix: Exclude PAID status
         }
       },
       include: { 

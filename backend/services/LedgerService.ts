@@ -40,25 +40,35 @@ export class LedgerService {
     });
 
     // 4. Normalize & Fix Decimal Conversion
-    const creditEntries = invoices.map(inv => ({
-      id: `INV-${inv.id}`,
-      date: inv.issue_date,
-      description: `Invoice #${inv.invoice_number} - ${inv.client.company_name}`,
-      category: 'Sales / Revenue',
-      type: 'CREDIT',
-      // FIX: Use .toString() to handle Prisma Decimal objects correctly
-      amount: Number(inv.grand_total?.toString() || 0)
-    }));
+    const creditEntries = invoices.map(inv => {
+      const amount = Number(inv.grand_total?.toString() || 0);
+      return {
+        id: `INV-${inv.id}`,
+        date: inv.issue_date,
+        description: `Invoice #${inv.invoice_number} - ${inv.client.company_name}`,
+        ref: inv.invoice_number, // <--- Added ref for table display
+        category: 'Sales / Revenue',
+        type: 'CREDIT',
+        amount: amount,
+        credit: amount, // <--- Populated for UI/PDF calculation
+        debit: 0        // <--- Populated to prevent NaN
+      };
+    });
 
-    const debitEntries = expenses.map(exp => ({
-      id: `EXP-${exp.id}`,
-      date: exp.date,
-      description: exp.description || 'Expense Record',
-      category: exp.category,
-      type: 'DEBIT',
-      // FIX: Use .toString()
-      amount: Number(exp.amount?.toString() || 0)
-    }));
+    const debitEntries = expenses.map(exp => {
+      const amount = Number(exp.amount?.toString() || 0);
+      return {
+        id: `EXP-${exp.id}`,
+        date: exp.date,
+        description: exp.description || 'Expense Record',
+        ref: '-',
+        category: exp.category,
+        type: 'DEBIT',
+        amount: amount,
+        credit: 0,      // <--- Populated to prevent NaN
+        debit: amount   // <--- Populated for UI/PDF calculation
+      };
+    });
 
     // 5. Combine & Sort
     const ledger = [...creditEntries, ...debitEntries].sort((a, b) => 
