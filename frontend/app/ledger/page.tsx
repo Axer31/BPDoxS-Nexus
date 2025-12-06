@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useState, useMemo } from 'react';
 import api from "@/lib/api";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
@@ -11,14 +11,18 @@ import {
 import { 
   ArrowDownLeft, ArrowUpRight, Download, Loader2, FileSpreadsheet, Filter 
 } from "lucide-react";
-import { format, startOfDay, startOfMonth, startOfQuarter, startOfYear, subMonths, isAfter, isSameDay } from "date-fns";
+import { 
+  format, startOfMonth, startOfQuarter, startOfYear, subMonths, 
+  isWithinInterval, endOfDay, startOfDay, getYear, getMonth 
+} from "date-fns";
+import { ScrollArea } from "@/components/ui/scroll-area";
 
 export default function LedgerPage() {
   const [allTransactions, setAllTransactions] = useState<any[]>([]);
   const [filteredTransactions, setFilteredTransactions] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
   const [exporting, setExporting] = useState(false);
-  const [timeRange, setTimeRange] = useState("monthly"); // Default
+  const [timeRange, setTimeRange] = useState("monthly");
 
   // 1. Load Data
   useEffect(() => {
@@ -31,30 +35,96 @@ export default function LedgerPage() {
     });
   }, []);
 
-  // 2. Client-Side Filtering Logic
+  // 2. DYNAMIC FINANCIAL YEARS LOGIC
+  // Calculate unique Financial Years based on actual transaction data
+  const availableFYs = useMemo(() => {
+      const years = new Set<number>();
+      const currentYear = new Date().getFullYear();
+      const currentMonth = new Date().getMonth(); // 0=Jan, 3=April
+      
+      // Always include Current Financial Year
+      const currentFYStart = currentMonth < 3 ? currentYear - 1 : currentYear;
+      years.add(currentFYStart);
+      years.add(currentFYStart - 1); // Include previous year by default
+
+      // Scan all transactions to add their years
+      allTransactions.forEach(t => {
+          const d = new Date(t.date);
+          const month = d.getMonth();
+          const year = d.getFullYear();
+          // If Jan/Feb/Mar, it belongs to previous year's FY start
+          const fyStart = month < 3 ? year - 1 : year;
+          years.add(fyStart);
+      });
+
+      // Convert to array and sort descending (Newest first)
+      return Array.from(years).sort((a, b) => b - a);
+  }, [allTransactions]);
+
+  // 3. Helper: Get Date Range based on Filter
+  const getDateRangeForFilter = (filter: string) => {
+    const now = new Date();
+    let start: Date | null = null;
+    let end: Date | null = endOfDay(now);
+
+    if (filter.startsWith("FY-")) {
+        const startYear = parseInt(filter.split("-")[1]);
+        start = new Date(startYear, 3, 1); // April 1st
+        end = new Date(startYear + 1, 2, 31, 23, 59, 59); // March 31st next year
+    } else {
+        switch(filter) {
+            case 'daily': 
+                start = startOfDay(now); 
+                break;
+            case 'monthly': 
+                start = startOfMonth(now); 
+                break;
+            case 'quarterly': 
+                start = startOfQuarter(now); 
+                break;
+            case 'semi-annually': 
+                start = subMonths(now, 6); 
+                break;
+            case 'yearly': 
+                start = startOfYear(now); 
+                break;
+            case 'all': 
+                start = null; 
+                end = null;
+                break;
+        }
+    }
+    return { start, end };
+  };
+
+  // 4. Filtering Logic
   useEffect(() => {
     if (allTransactions.length === 0) return;
 
-    const now = new Date();
+    const { start, end } = getDateRangeForFilter(timeRange);
+
     const filtered = allTransactions.filter(t => {
+        // If "All Time"
+        if (!start || !end) return true;
+        
         const d = new Date(t.date);
-        switch(timeRange) {
-            case 'daily': return isSameDay(d, now);
-            case 'monthly': return isAfter(d, startOfMonth(now));
-            case 'quarterly': return isAfter(d, startOfQuarter(now));
-            case 'semi-annually': return isAfter(d, subMonths(now, 6));
-            case 'yearly': return isAfter(d, startOfYear(now));
-            default: return true;
-        }
+        return isWithinInterval(d, { start, end });
     });
     setFilteredTransactions(filtered);
   }, [timeRange, allTransactions]);
 
-  // 3. Export PDF Handler
+  // 5. Export PDF Handler
   const handleExportPdf = async () => {
     setExporting(true);
     try {
-        const response = await api.get(`/ledger/pdf?filter=${timeRange}`, { responseType: 'blob' });
+        const { start, end } = getDateRangeForFilter(timeRange);
+        
+        const params = new URLSearchParams();
+        if (start) params.append('from', start.toISOString());
+        if (end) params.append('to', end.toISOString());
+
+        const response = await api.get(`/ledger/pdf?${params.toString()}`, { responseType: 'blob' });
+        
         const url = window.URL.createObjectURL(new Blob([response.data]));
         const link = document.createElement('a');
         link.href = url;
@@ -88,19 +158,31 @@ export default function LedgerPage() {
         
         <div className="flex items-center gap-3">
             {/* Filter Dropdown */}
-            <div className="w-[180px]">
+            <div className="w-[200px]">
                 <Select value={timeRange} onValueChange={setTimeRange}>
                     <SelectTrigger>
                         <Filter className="w-4 h-4 mr-2 text-muted-foreground" />
                         <SelectValue placeholder="Filter" />
                     </SelectTrigger>
                     <SelectContent>
-                        <SelectItem value="daily">Daily (Today)</SelectItem>
-                        <SelectItem value="monthly">Monthly</SelectItem>
-                        <SelectItem value="quarterly">Quarterly</SelectItem>
-                        <SelectItem value="semi-annually">Semi-Annually</SelectItem>
-                        <SelectItem value="yearly">Yearly</SelectItem>
-                        <SelectItem value="all">All Time</SelectItem>
+                        <ScrollArea className="h-[300px]">
+                            <div className="p-1">
+                                <p className="text-xs font-semibold text-muted-foreground px-2 py-1.5">Standard Ranges</p>
+                                <SelectItem value="daily">Daily (Today)</SelectItem>
+                                <SelectItem value="monthly">This Month</SelectItem>
+                                <SelectItem value="quarterly">This Quarter</SelectItem>
+                                <SelectItem value="yearly">This Year (Jan-Dec)</SelectItem>
+                                <SelectItem value="all">All Time</SelectItem>
+                                
+                                <p className="text-xs font-semibold text-muted-foreground px-2 py-1.5 mt-2">Financial Years</p>
+                                {/* DYNAMICALLY RENDERED FYs */}
+                                {availableFYs.map(year => (
+                                    <SelectItem key={year} value={`FY-${year}`}>
+                                        FY {year}-{year.toString().slice(-2) === '99' ? '00' : (year+1).toString().slice(-2)}
+                                    </SelectItem>
+                                ))}
+                            </div>
+                        </ScrollArea>
                     </SelectContent>
                 </Select>
             </div>
@@ -120,7 +202,7 @@ export default function LedgerPage() {
                 <div className="flex items-center gap-3">
                     <div className="p-2 bg-green-100 dark:bg-green-800 rounded-full text-green-600 dark:text-green-100"><ArrowDownLeft className="w-5 h-5" /></div>
                     <div>
-                        <p className="text-sm font-medium text-green-800 dark:text-green-300">Income ({timeRange})</p>
+                        <p className="text-sm font-medium text-green-800 dark:text-green-300">Income</p>
                         <h3 className="text-2xl font-bold text-green-700 dark:text-green-400">{formatCurrency(totalIncome)}</h3>
                     </div>
                 </div>
@@ -132,7 +214,7 @@ export default function LedgerPage() {
                 <div className="flex items-center gap-3">
                     <div className="p-2 bg-red-100 dark:bg-red-800 rounded-full text-red-600 dark:text-red-100"><ArrowUpRight className="w-5 h-5" /></div>
                     <div>
-                        <p className="text-sm font-medium text-red-800 dark:text-red-300">Expenses ({timeRange})</p>
+                        <p className="text-sm font-medium text-red-800 dark:text-red-300">Expenses</p>
                         <h3 className="text-2xl font-bold text-red-700 dark:text-red-400">{formatCurrency(totalExpense)}</h3>
                     </div>
                 </div>
@@ -179,7 +261,7 @@ export default function LedgerPage() {
                                 </TableCell>
                                 <TableCell>
                                     <div className="font-medium text-sm">{t.description}</div>
-                                    <div className="text-[10px] uppercase tracking-wider text-muted-foreground">{t.type} • {t.status}</div>
+                                    <div className="text-[10px] uppercase tracking-wider text-muted-foreground">{t.type} • {t.category}</div>
                                 </TableCell>
                                 <TableCell className="text-xs text-muted-foreground">{t.ref}</TableCell>
                                 <TableCell className="text-right font-medium text-green-600">

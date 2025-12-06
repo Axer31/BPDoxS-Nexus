@@ -21,9 +21,13 @@ import { format, isWithinInterval, startOfDay, endOfDay } from "date-fns";
 import { useRouter } from 'next/navigation';
 import { Calendar } from "@/components/ui/calendar";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
+import { 
+  Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter 
+} from "@/components/ui/dialog"; // <--- Added Dialog Imports
+import { Label } from "@/components/ui/label"; // <--- Added Label Import
 import { cn } from "@/lib/utils";
 import { DateRange } from "react-day-picker";
-import { useToast } from "@/components/ui/toast-context"; // <--- Import Toast Hook
+import { useToast } from "@/components/ui/toast-context";
 
 interface Invoice {
   id: number;
@@ -39,7 +43,7 @@ interface Invoice {
 
 export default function InvoiceListPage() {
   const router = useRouter();
-  const { toast } = useToast(); // <--- Initialize Toast
+  const { toast } = useToast();
   const [invoices, setInvoices] = useState<Invoice[]>([]);
   const [filteredInvoices, setFilteredInvoices] = useState<Invoice[]>([]);
   const [loading, setLoading] = useState(true);
@@ -49,6 +53,11 @@ export default function InvoiceListPage() {
   const [searchTerm, setSearchTerm] = useState("");
   const [statusFilter, setStatusFilter] = useState("ALL");
   const [dateRange, setDateRange] = useState<DateRange | undefined>();
+
+  // --- NEW: Payment Date Dialog State ---
+  const [isPayDialogOpen, setIsPayDialogOpen] = useState(false);
+  const [payDate, setPayDate] = useState<Date | undefined>(new Date());
+  const [invoiceToPay, setInvoiceToPay] = useState<number | null>(null);
 
   useEffect(() => {
     const fetchInvoices = async () => {
@@ -130,7 +139,6 @@ export default function InvoiceListPage() {
     }
   };
 
-  // --- MODIFIED: Direct Send (No Prompt) ---
   const handleSendEmail = async (inv: Invoice) => {
     if (!inv.client.email) {
         return toast("Client has no registered email address.", "error");
@@ -140,7 +148,6 @@ export default function InvoiceListPage() {
     try { 
         await api.post(`/mail/invoice/${inv.id}`, { email: inv.client.email }); 
         toast(`Email sent to ${inv.client.email}`, "success");
-        // Auto-mark as sent if not already paid
         if (inv.status === 'DRAFT') handleStatusChange(inv.id, 'SENT');
     } 
     catch (e) { 
@@ -150,10 +157,10 @@ export default function InvoiceListPage() {
     }
   };
 
+  // Generic Status Change
   const handleStatusChange = async (id: number, status: string) => {
     try { 
         await api.patch(`/invoices/${id}/status`, { status }); 
-        // Optimistic Update
         setInvoices(prev => prev.map(inv => inv.id === id ? { ...inv, status } : inv));
         toast(`Status updated to ${status}`, "success");
     } 
@@ -162,11 +169,37 @@ export default function InvoiceListPage() {
     }
   };
 
+  // --- NEW: Open Mark Paid Dialog ---
+  const openPayDialog = (id: number) => {
+      setInvoiceToPay(id);
+      setPayDate(new Date()); // Default to today
+      setIsPayDialogOpen(true);
+  };
+
+  // --- NEW: Confirm Payment with Date ---
+  const handleConfirmPaid = async () => {
+      if (!invoiceToPay) return;
+      try {
+          // Pass the selected date to the backend
+          await api.patch(`/invoices/${invoiceToPay}/status`, { 
+              status: 'PAID',
+              paymentDate: payDate 
+          });
+          
+          setInvoices(prev => prev.map(inv => inv.id === invoiceToPay ? { ...inv, status: 'PAID' } : inv));
+          toast("Invoice marked as Paid", "success");
+      } catch (e) {
+          toast("Failed to update status", "error");
+      } finally {
+          setIsPayDialogOpen(false);
+          setInvoiceToPay(null);
+      }
+  };
+
   const handleDelete = async (id: number) => {
       if (!confirm("Are you sure you want to delete this invoice? This action cannot be undone.")) return;
       try {
           await api.delete(`/invoices/${id}`);
-          // Optimistic Delete
           setInvoices(prev => prev.filter(inv => inv.id !== id));
           toast("Invoice deleted successfully", "success");
       } catch (e) {
@@ -301,7 +334,8 @@ export default function InvoiceListPage() {
                               <DropdownMenuContent align="end">
                                 <DropdownMenuItem onClick={() => handleDownloadPdf(inv.id, inv.invoice_number)}>Download PDF</DropdownMenuItem>
                                 <DropdownMenuItem onClick={() => handleSendEmail(inv)}>Send Email</DropdownMenuItem>
-                                <DropdownMenuItem onClick={() => handleStatusChange(inv.id, 'PAID')}>Mark Paid</DropdownMenuItem>
+                                {/* UPDATED: Trigger Dialog instead of direct call */}
+                                <DropdownMenuItem onClick={() => openPayDialog(inv.id)}>Mark Paid</DropdownMenuItem>
                                 <DropdownMenuItem onClick={() => handleStatusChange(inv.id, 'SHARED')}>Mark Shared</DropdownMenuItem>
                                 <DropdownMenuItem onClick={() => handleStatusChange(inv.id, 'DRAFT')}>Mark Draft</DropdownMenuItem>
                                 <DropdownMenuItem className="text-red-600 focus:text-red-600 focus:bg-red-50 dark:focus:bg-red-900/10" onClick={() => handleDelete(inv.id)}> Delete </DropdownMenuItem>
@@ -316,6 +350,36 @@ export default function InvoiceListPage() {
           )}
         </CardContent>
       </Card>
+
+      {/* MARK AS PAID DIALOG */}
+      <Dialog open={isPayDialogOpen} onOpenChange={setIsPayDialogOpen}>
+        <DialogContent className="sm:max-w-[425px]">
+          <DialogHeader>
+            <DialogTitle>Mark Invoice as Paid</DialogTitle>
+            <DialogDescription>
+              Select the date the payment was received.
+            </DialogDescription>
+          </DialogHeader>
+          <div className="grid gap-4 py-4">
+            <div className="flex flex-col space-y-2">
+                <Label>Payment Date</Label>
+                <div className="border rounded-md p-2 flex justify-center">
+                    <Calendar
+                        mode="single"
+                        selected={payDate}
+                        onSelect={setPayDate}
+                        initialFocus
+                    />
+                </div>
+            </div>
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setIsPayDialogOpen(false)}>Cancel</Button>
+            <Button onClick={handleConfirmPaid}>Confirm Payment</Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
     </div>
   );
 }

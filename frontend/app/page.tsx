@@ -4,185 +4,381 @@ import React, { useEffect, useState } from "react";
 import api from "@/lib/api";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
-import { DollarSign, Activity, TrendingUp, Wallet, AlertCircle, Loader2, Calendar as CalendarIcon, X, FileText } from "lucide-react";
+import { DollarSign, Activity, TrendingUp, Wallet, AlertCircle, Loader2, Check, ChevronsUpDown, Filter } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
-import { Calendar } from "@/components/ui/calendar";
+import { ScrollArea } from "@/components/ui/scroll-area";
 import { 
-  ResponsiveContainer, BarChart, Bar, XAxis, YAxis, Tooltip, CartesianGrid, Legend, LineChart, Line
+  ResponsiveContainer, BarChart, Bar, XAxis, YAxis, Tooltip, CartesianGrid, Legend, AreaChart, Area
 } from "recharts";
-import { format } from "date-fns";
-import { DateRange } from "react-day-picker";
 import { cn } from "@/lib/utils";
 import { Badge } from "@/components/ui/badge";
+import { Command, CommandGroup, CommandItem } from "@/components/ui/command";
+import { ChartCard } from "@/components/dashboard/ChartCard";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+
+// Helper: FY Date Range (April 1 - March 31)
+const getFinancialYearDates = (startYear: number) => {
+    const from = new Date(startYear, 3, 1); // April 1st
+    const to = new Date(startYear + 1, 2, 31); // March 31st next year
+    return { from, to };
+};
 
 export default function DashboardPage() {
-  const [data, setData] = useState<any>(null);
-  const [sharedInvoices, setSharedInvoices] = useState<any[]>([]); // New State for Shared Invoices
+  const currentYear = new Date().getFullYear();
+  const currentMonth = new Date().getMonth();
+  const initialFyStart = currentMonth < 3 ? currentYear - 1 : currentYear;
+  
+  // UNLIMITED YEARS GENERATOR (1950 - 2050)
+  const availableYears = Array.from({ length: 100 }, (_, i) => currentYear + 10 - i);
+
+  // --- STATE MANAGEMENT ---
+  
+  // 1. Comparison Chart State
+  const [comparisonYears, setComparisonYears] = useState<number[]>([
+    initialFyStart, initialFyStart - 1, initialFyStart - 2, initialFyStart - 3
+  ]);
+  const [isYearDropdownOpen, setIsYearDropdownOpen] = useState(false);
+  const [yearlyData, setYearlyData] = useState<any[]>([]);
+
+  // 2. Net Balance State
+  const [netBalanceFy, setNetBalanceFy] = useState<string>(initialFyStart.toString());
+  const [netBalanceData, setNetBalanceData] = useState<any[]>([]);
+
+  // 3. Monthly Performance State
+  const [monthlyFy, setMonthlyFy] = useState<string>(initialFyStart.toString());
+  const [monthlyData, setMonthlyData] = useState<any[]>([]);
+
+  // 4. Expense Table State
+  const [expenseFy, setExpenseFy] = useState<string>(initialFyStart.toString());
+  const [expenseTable, setExpenseTable] = useState<any[]>([]);
+  const [expenseColumns, setExpenseColumns] = useState<string[]>([]);
+
+  // 5. Recent Balances State
+  const [recentFy, setRecentFy] = useState<string>(initialFyStart.toString());
+  const [recentData, setRecentData] = useState<any[]>([]);
+
+  // 6. Global/Summary State
+  const [summary, setSummary] = useState<any>({});
+  const [sharedInvoices, setSharedInvoices] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
-  const [error, setError] = useState("");
-  
-  // Date Range State
-  const [dateRange, setDateRange] = useState<DateRange | undefined>();
 
-  const fetchData = async () => {
-    setLoading(true);
-    try {
-        // Construct Query Params for Filtering Stats
-        let query = "";
-        if (dateRange?.from) {
-            const fromStr = dateRange.from.toISOString();
-            const toStr = dateRange.to ? dateRange.to.toISOString() : fromStr;
-            query = `?from=${fromStr}&to=${toStr}`;
-        }
+  // --- DATA FETCHING (Independent) ---
 
-        // Parallel Requests: Dashboard Stats + Shared Invoices
-        const [statsRes, sharedRes] = await Promise.all([
-            api.get(`/dashboard/stats${query}`),
-            api.get('/invoices/shared')
-        ]);
-
-        setData(statsRes.data);
-        setSharedInvoices(sharedRes.data);
-
-    } catch (err) {
-        console.error(err);
-        setError("Failed to load dashboard data.");
-    } finally {
-        setLoading(false);
-    }
-  };
-
-  // Fetch on Mount and whenever Date Range changes
+  // A. Fetch Initial Summary & Pending Invoices (Once)
   useEffect(() => {
-    fetchData();
-  }, [dateRange]);
+    const fetchGlobal = async () => {
+        const fyDates = getFinancialYearDates(initialFyStart); // Default to current FY
+        const params = new URLSearchParams({
+            from: fyDates.from.toISOString(),
+            to: fyDates.to.toISOString(),
+            sections: 'summary'
+        });
+        
+        try {
+            const [statsRes, sharedRes] = await Promise.all([
+                api.get(`/dashboard/stats?${params}`),
+                api.get('/invoices/shared')
+            ]);
+            setSummary(statsRes.data.summary);
+            setSharedInvoices(sharedRes.data);
+        } catch (e) { console.error(e); } 
+        finally { setLoading(false); }
+    };
+    fetchGlobal();
+  }, []);
 
-  if (loading && !data) {
-    return (
-      <div className="flex h-[80vh] flex-col items-center justify-center text-muted-foreground">
-        <Loader2 className="h-8 w-8 animate-spin text-primary mb-4" />
-        <p>Loading Analytics...</p>
-      </div>
-    );
-  }
+  // B. Fetch Yearly Comparison
+  useEffect(() => {
+    const fetchYearly = async () => {
+        if (comparisonYears.length === 0) return;
+        try {
+            const params = new URLSearchParams({
+                years: comparisonYears.join(','),
+                sections: 'yearlyComparison'
+            });
+            const res = await api.get(`/dashboard/stats?${params}`);
+            setYearlyData(res.data.charts.yearlyComparison);
+        } catch (e) { console.error(e); }
+    };
+    fetchYearly();
+  }, [comparisonYears]);
 
-  if (error && !data) {
-    return (
-        <div className="p-8 text-center text-red-500">
-            <AlertCircle className="mx-auto h-10 w-10 mb-2" />
-            <p>{error}</p>
-        </div>
-    );
-  }
+  // C. Fetch Net Balance
+  useEffect(() => {
+    const fetchNet = async () => {
+        const fyDates = getFinancialYearDates(parseInt(netBalanceFy));
+        const params = new URLSearchParams({
+            from: fyDates.from.toISOString(),
+            to: fyDates.to.toISOString(),
+            sections: 'monthlyStats'
+        });
+        const res = await api.get(`/dashboard/stats?${params}`);
+        setNetBalanceData(res.data.charts.monthlyStats);
+    };
+    fetchNet();
+  }, [netBalanceFy]);
 
-  const { summary, charts } = data || { summary: {}, charts: {} };
-  
-  const monthlyStats = charts?.monthlyStats || [];
-  const lastAvgSale = monthlyStats.length > 0 ? monthlyStats[monthlyStats.length - 1].avgSale : 0;
+  // D. Fetch Monthly Performance
+  useEffect(() => {
+    const fetchMonthly = async () => {
+        const fyDates = getFinancialYearDates(parseInt(monthlyFy));
+        const params = new URLSearchParams({
+            from: fyDates.from.toISOString(),
+            to: fyDates.to.toISOString(),
+            sections: 'monthlyStats'
+        });
+        const res = await api.get(`/dashboard/stats?${params}`);
+        setMonthlyData(res.data.charts.monthlyStats);
+    };
+    fetchMonthly();
+  }, [monthlyFy]);
+
+  // E. Fetch Expenses
+  useEffect(() => {
+    const fetchExpenses = async () => {
+        const fyDates = getFinancialYearDates(parseInt(expenseFy));
+        const params = new URLSearchParams({
+            from: fyDates.from.toISOString(),
+            to: fyDates.to.toISOString(),
+            sections: 'expenseTable'
+        });
+        const res = await api.get(`/dashboard/stats?${params}`);
+        setExpenseTable(res.data.tables.expenseTable);
+        setExpenseColumns(res.data.tables.expenseColumns);
+    };
+    fetchExpenses();
+  }, [expenseFy]);
+
+  // F. Fetch Recent Balances
+  useEffect(() => {
+    const fetchRecent = async () => {
+        const fyDates = getFinancialYearDates(parseInt(recentFy));
+        const params = new URLSearchParams({
+            from: fyDates.from.toISOString(),
+            to: fyDates.to.toISOString(),
+            sections: 'monthlyStats'
+        });
+        const res = await api.get(`/dashboard/stats?${params}`);
+        setRecentData(res.data.charts.monthlyStats);
+    };
+    fetchRecent();
+  }, [recentFy]);
+
+
+  // --- HELPERS ---
+  const toggleComparisonYear = (year: number) => {
+      setComparisonYears(prev => prev.includes(year) ? prev.filter(y => y !== year) : [...prev, year]);
+  };
 
   const formatCurrency = (val: number) => 
     new Intl.NumberFormat('en-IN', { style: 'currency', currency: 'INR', maximumFractionDigits: 0 }).format(val);
 
+  const CustomizedAxisTick = (props: any) => {
+    const { x, y, payload } = props;
+    return (
+      <g transform={`translate(${x},${y})`}>
+        <text x={0} y={0} dy={16} textAnchor="end" fill="#666" transform="rotate(-35)" fontSize={12}>{payload.value}</text>
+      </g>
+    );
+  };
+
+  if (loading) return <div className="flex h-[80vh] items-center justify-center"><Loader2 className="h-8 w-8 animate-spin text-primary"/></div>;
+
   return (
     <div className="p-6 space-y-6">
       
-      {/* HEADER WITH FILTER */}
-      <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4">
+      {/* HEADER */}
+      <div className="flex justify-between items-center">
         <div>
             <h1 className="text-3xl font-bold text-foreground">Dashboard</h1>
-            <p className="text-muted-foreground">Financial Overview & Analytics</p>
-        </div>
-
-        {/* Date Picker */}
-        <div className="flex items-center gap-2 bg-card p-1 rounded-lg border shadow-sm">
-             <Popover>
-                <PopoverTrigger asChild>
-                    <Button variant="ghost" className={cn("w-[260px] justify-start text-left font-normal", !dateRange && "text-muted-foreground")}>
-                        <CalendarIcon className="mr-2 h-4 w-4" />
-                        {dateRange?.from ? (
-                            dateRange.to ? (
-                                <>{format(dateRange.from, "LLL dd, y")} - {format(dateRange.to, "LLL dd, y")}</>
-                            ) : format(dateRange.from, "LLL dd, y")
-                        ) : <span>Filter by Date Range</span>}
-                    </Button>
-                </PopoverTrigger>
-                <PopoverContent className="w-auto p-0" align="end">
-                    <Calendar
-                        initialFocus
-                        mode="range"
-                        defaultMonth={dateRange?.from}
-                        selected={dateRange}
-                        onSelect={setDateRange}
-                        numberOfMonths={2}
-                    />
-                </PopoverContent>
-             </Popover>
-             {dateRange && (
-                 <Button variant="ghost" size="icon" onClick={() => setDateRange(undefined)} title="Clear Filter">
-                     <X className="w-4 h-4" />
-                 </Button>
-             )}
+            <p className="text-muted-foreground">Financial Overview</p>
         </div>
       </div>
       
-      {/* 1. TOP METRICS ROW */}
+      {/* 1. TOP METRICS (Current FY) */}
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
         <MetricCard title="Total Revenue" value={summary?.totalRevenue || 0} icon={<DollarSign />} color="text-blue-600" bg="bg-blue-50 dark:bg-blue-900/20" />
         <MetricCard title="Total Expenses" value={summary?.totalExpense || 0} icon={<Wallet />} color="text-red-600" bg="bg-red-50 dark:bg-red-900/20" />
         <MetricCard title="Net Profit" value={summary?.netProfit || 0} icon={<Activity />} color="text-green-600" bg="bg-green-50 dark:bg-green-900/20" />
-        <MetricCard title="Avg Sale" value={lastAvgSale} icon={<TrendingUp />} color="text-purple-600" bg="bg-purple-50 dark:bg-purple-900/20" />
+        <MetricCard title="Avg Sale" value={monthlyData.length > 0 ? monthlyData[monthlyData.length - 1].avgSale : 0} icon={<TrendingUp />} color="text-purple-600" bg="bg-purple-50 dark:bg-purple-900/20" />
       </div>
 
-      {/* 2. CHARTS ROW */}
+      {/* 2. TOP CHART ROW */}
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
         
-        <Card className="shadow-horizon border-none bg-card">
-            <CardHeader>
-                <CardTitle>Sales vs Expenses</CardTitle>
-                <CardDescription>Performance over time</CardDescription>
-            </CardHeader>
-            <CardContent className="h-[300px]">
-                <ResponsiveContainer width="100%" height="100%">
-                    <BarChart data={monthlyStats}>
-                        <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="hsl(var(--border))" />
-                        <XAxis dataKey="month" fontSize={12} stroke="hsl(var(--muted-foreground))" tickLine={false} axisLine={false} dy={10} />
-                        <YAxis fontSize={12} stroke="hsl(var(--muted-foreground))" tickFormatter={(val) => `₹${val/1000}k`} tickLine={false} axisLine={false} />
-                        <Tooltip cursor={{fill: 'hsl(var(--muted)/0.2)'}} contentStyle={tooltipStyle} />
-                        <Legend wrapperStyle={{paddingTop: '20px'}} />
-                        <Bar dataKey="revenue" name="Sales" fill="hsl(var(--primary))" radius={[4,4,0,0]} />
-                        <Bar dataKey="expense" name="Expenses" fill="hsl(var(--destructive))" radius={[4,4,0,0]} />
-                    </BarChart>
-                </ResponsiveContainer>
-            </CardContent>
-        </Card>
+        {/* YEARLY COMPARISON */}
+        <ChartCard 
+            title="Yearly Comparison" 
+            description="Revenue per Financial Year"
+            action={
+                <Popover open={isYearDropdownOpen} onOpenChange={setIsYearDropdownOpen}>
+                    <PopoverTrigger asChild>
+                        <Button variant="outline" size="sm" className="h-8 border-dashed">
+                            Select Years <ChevronsUpDown className="ml-2 h-4 w-4 opacity-50" />
+                        </Button>
+                    </PopoverTrigger>
+                    <PopoverContent className="w-[200px] p-0" align="end">
+                        <Command>
+                            <CommandGroup>
+                                <ScrollArea className="h-[300px]">
+                                    {availableYears.map((year) => (
+                                        <CommandItem key={year} value={year.toString()} onSelect={() => toggleComparisonYear(year)}>
+                                            <Check className={cn("mr-2 h-4 w-4", comparisonYears.includes(year) ? "opacity-100" : "opacity-0")} />
+                                            FY {year}-{year.toString().slice(-2) === '99' ? '00' : (year+1).toString().slice(-2)}
+                                        </CommandItem>
+                                    ))}
+                                </ScrollArea>
+                            </CommandGroup>
+                        </Command>
+                    </PopoverContent>
+                </Popover>
+            }
+        >
+            <ResponsiveContainer width="100%" height="100%">
+                <BarChart data={yearlyData} margin={{ bottom: 20 }}>
+                    <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="hsl(var(--border))" />
+                    <XAxis dataKey="year" interval={0} tick={<CustomizedAxisTick />} height={60} stroke="hsl(var(--muted-foreground))" tickLine={false} axisLine={false} />
+                    <YAxis fontSize={12} stroke="hsl(var(--muted-foreground))" tickFormatter={(val) => `₹${val/1000}k`} tickLine={false} axisLine={false} />
+                    <Tooltip 
+                        cursor={{ fill: 'hsl(var(--muted)/0.2)' }} 
+                        contentStyle={tooltipStyle} 
+                        formatter={(val: number) => formatCurrency(val)} 
+                    />
+                    <Bar dataKey="total" name="Revenue" fill="hsl(var(--primary))" radius={[4,4,0,0]} />
+                </BarChart>
+            </ResponsiveContainer>
+        </ChartCard>
 
-        <Card className="shadow-horizon border-none bg-card">
-            <CardHeader>
-                <CardTitle>Net Balance Trend</CardTitle>
-                <CardDescription>Cumulative growth</CardDescription>
-            </CardHeader>
-            <CardContent className="h-[300px]">
-                <ResponsiveContainer width="100%" height="100%">
-                    <LineChart data={monthlyStats}>
-                        <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="hsl(var(--border))" />
-                        <XAxis dataKey="month" fontSize={12} stroke="hsl(var(--muted-foreground))" tickLine={false} axisLine={false} dy={10} />
-                        <YAxis fontSize={12} stroke="hsl(var(--muted-foreground))" tickLine={false} axisLine={false} />
-                        <Tooltip contentStyle={tooltipStyle} />
-                        <Legend wrapperStyle={{paddingTop: '20px'}} />
-                        <Line type="monotone" dataKey="balance" name="Net Balance" stroke="#10b981" strokeWidth={3} dot={{r:4, fill:'#10b981'}} />
-                    </LineChart>
-                </ResponsiveContainer>
-            </CardContent>
-        </Card>
+        {/* NET BALANCE TREND */}
+        <ChartCard 
+            title="Net Balance Trend" 
+            description={`Cumulative for FY ${netBalanceFy}-${parseInt(netBalanceFy)+1}`}
+            action={
+                <Select value={netBalanceFy} onValueChange={setNetBalanceFy}>
+                    <SelectTrigger className="h-8 w-[140px]"><SelectValue /></SelectTrigger>
+                    <SelectContent>
+                        <ScrollArea className="h-[300px]">
+                         {availableYears.slice(0, 50).map(y => (
+                            <SelectItem key={y} value={y.toString()}>FY {y}-{y.toString().slice(-2) === '99' ? '00' : (y+1).toString().slice(-2)}</SelectItem>
+                         ))}
+                        </ScrollArea>
+                    </SelectContent>
+                </Select>
+            }
+        >
+            <ResponsiveContainer width="100%" height="100%">
+                <AreaChart data={netBalanceData}>
+                    <defs>
+                        <linearGradient id="colorBalance" x1="0" y1="0" x2="0" y2="1">
+                            <stop offset="5%" stopColor="#10b981" stopOpacity={0.2}/>
+                            <stop offset="95%" stopColor="#10b981" stopOpacity={0}/>
+                        </linearGradient>
+                    </defs>
+                    <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="hsl(var(--border))" />
+                    <XAxis dataKey="month" fontSize={12} stroke="hsl(var(--muted-foreground))" tickLine={false} axisLine={false} dy={10} />
+                    <YAxis fontSize={12} stroke="hsl(var(--muted-foreground))" tickLine={false} axisLine={false} />
+                    <Tooltip contentStyle={tooltipStyle} />
+                    <Area type="monotone" dataKey="balance" name="Net Balance" stroke="#10b981" fillOpacity={1} fill="url(#colorBalance)" strokeWidth={2} />
+                </AreaChart>
+            </ResponsiveContainer>
+        </ChartCard>
       </div>
 
-      {/* 3. TABLES ROW */}
+      {/* 3. MONTHLY PERFORMANCE */}
+      <div className="grid grid-cols-1 gap-6">
+        <ChartCard 
+            title="Monthly Performance" 
+            description={`Revenue vs Expenses (FY ${monthlyFy}-${parseInt(monthlyFy)+1})`}
+            action={
+                <Select value={monthlyFy} onValueChange={setMonthlyFy}>
+                    <SelectTrigger className="h-8 w-[140px]"><SelectValue /></SelectTrigger>
+                    <SelectContent>
+                       <ScrollArea className="h-[300px]">
+                        {availableYears.slice(0, 50).map(y => (
+                            <SelectItem key={y} value={y.toString()}>FY {y}-{y.toString().slice(-2) === '99' ? '00' : (y+1).toString().slice(-2)}</SelectItem>
+                        ))}
+                       </ScrollArea>
+                    </SelectContent>
+                </Select>
+            }
+        >
+            <ResponsiveContainer width="100%" height="100%">
+                <BarChart data={monthlyData}>
+                    <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="hsl(var(--border))" />
+                    <XAxis dataKey="month" fontSize={12} stroke="hsl(var(--muted-foreground))" tickLine={false} axisLine={false} dy={10} />
+                    <YAxis fontSize={12} stroke="hsl(var(--muted-foreground))" tickFormatter={(val) => `₹${val/1000}k`} tickLine={false} axisLine={false} />
+                    <Tooltip cursor={{fill: 'hsl(var(--muted)/0.2)'}} contentStyle={tooltipStyle} />
+                    <Legend wrapperStyle={{paddingTop: '20px'}} />
+                    <Bar dataKey="revenue" name="Sales" fill="hsl(var(--primary))" radius={[4,4,0,0]} />
+                    <Bar dataKey="expense" name="Expenses" fill="hsl(var(--destructive))" radius={[4,4,0,0]} />
+                </BarChart>
+            </ResponsiveContainer>
+        </ChartCard>
+      </div>
+
+      {/* 4. EXPENSE TABLE */}
+      <Card className="shadow-horizon border-none bg-card overflow-hidden">
+        <CardHeader className="flex flex-row items-center justify-between">
+            <div>
+                <CardTitle>Expense Breakdown</CardTitle>
+                <CardDescription>FY {expenseFy}-{parseInt(expenseFy)+1}</CardDescription>
+            </div>
+            <Select value={expenseFy} onValueChange={setExpenseFy}>
+                <SelectTrigger className="h-8 w-[140px]"><SelectValue /></SelectTrigger>
+                <SelectContent>
+                   <ScrollArea className="h-[300px]">
+                    {availableYears.slice(0, 50).map(y => (
+                        <SelectItem key={y} value={y.toString()}>FY {y}-{y.toString().slice(-2) === '99' ? '00' : (y+1).toString().slice(-2)}</SelectItem>
+                    ))}
+                   </ScrollArea>
+                </SelectContent>
+            </Select>
+        </CardHeader>
+        <CardContent className="overflow-x-auto">
+            <Table>
+                <TableHeader>
+                    <TableRow className="bg-muted/50 hover:bg-muted/50">
+                        <TableHead className="w-[200px] font-bold">Category</TableHead>
+                        {expenseColumns.map((col: string) => <TableHead key={col} className="text-right whitespace-nowrap">{col}</TableHead>)}
+                        <TableHead className="text-right font-bold text-foreground">Total</TableHead>
+                        <TableHead className="text-right font-bold text-foreground">Average</TableHead>
+                    </TableRow>
+                </TableHeader>
+                <TableBody>
+                    {expenseTable.length === 0 ? (
+                        <TableRow><TableCell colSpan={expenseColumns.length + 3} className="text-center py-8">No expense data found.</TableCell></TableRow>
+                    ) : expenseTable.map((row: any, i: number) => (
+                        <TableRow key={i}>
+                            <TableCell className="font-medium">{row.category}</TableCell>
+                            {expenseColumns.map((col: string) => (
+                                <TableCell key={col} className="text-right text-muted-foreground">{row[col] ? formatCurrency(row[col]) : '-'}</TableCell>
+                            ))}
+                            <TableCell className="text-right font-bold text-foreground bg-muted/20">{formatCurrency(row.total)}</TableCell>
+                            <TableCell className="text-right font-medium text-muted-foreground bg-muted/20">{formatCurrency(row.average)}</TableCell>
+                        </TableRow>
+                    ))}
+                </TableBody>
+            </Table>
+        </CardContent>
+      </Card>
+      
+      {/* 5. BOTTOM TABLES */}
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-        
-        {/* Recent Balances Table */}
-        <Card className="shadow-horizon border-none bg-card">
-            <CardHeader><CardTitle>Recent Balances</CardTitle></CardHeader>
+          <Card className="shadow-horizon border-none bg-card">
+            <CardHeader className="flex flex-row items-center justify-between">
+                <CardTitle>Balances History</CardTitle>
+                <Select value={recentFy} onValueChange={setRecentFy}>
+                    <SelectTrigger className="h-8 w-[120px]"><SelectValue /></SelectTrigger>
+                    <SelectContent>
+                       <ScrollArea className="h-[300px]">
+                        {availableYears.slice(0, 20).map(y => (
+                            <SelectItem key={y} value={y.toString()}>FY {y}-{y.toString().slice(-2) === '99' ? '00' : (y+1).toString().slice(-2)}</SelectItem>
+                        ))}
+                       </ScrollArea>
+                    </SelectContent>
+                </Select>
+            </CardHeader>
             <CardContent>
                 <Table>
                     <TableHeader>
@@ -194,13 +390,13 @@ export default function DashboardPage() {
                         </TableRow>
                     </TableHeader>
                     <TableBody>
-                        {monthlyStats.slice(-5).reverse().map((m: any) => (
+                        {recentData.slice(-5).reverse().map((m: any) => (
                             <TableRow key={m.month}>
                                 <TableCell className="font-medium text-foreground">{m.month}</TableCell>
                                 <TableCell className="text-right text-green-600">+{formatCurrency(m.revenue)}</TableCell>
                                 <TableCell className="text-right text-red-600">-{formatCurrency(m.expense)}</TableCell>
-                                <TableCell className={`text-right font-bold ${m.balance >= 0 ? 'text-primary' : 'text-orange-600'}`}>
-                                    {formatCurrency(m.balance)}
+                                <TableCell className={`text-right font-bold ${m.net >= 0 ? 'text-primary' : 'text-orange-600'}`}>
+                                    {formatCurrency(m.net)}
                                 </TableCell>
                             </TableRow>
                         ))}
@@ -209,13 +405,11 @@ export default function DashboardPage() {
             </CardContent>
         </Card>
 
-        {/* SHARED INVOICES (Replaces Pending Payments) */}
+        {/* SHARED INVOICES (No filter needed, shows pending) */}
         <Card className="shadow-horizon border-none bg-card">
             <CardHeader>
-                <CardTitle className="flex items-center gap-2 text-foreground">
-                    Pending Invoices
-                </CardTitle>
-                <CardDescription>All invoices issued to clients (Sent/Paid/Overdue).</CardDescription>
+                <CardTitle>Pending Invoices</CardTitle>
+                <CardDescription>All invoices issued to clients.</CardDescription>
             </CardHeader>
             <CardContent>
                 <Table>
@@ -235,14 +429,12 @@ export default function DashboardPage() {
                                 <TableCell className="font-mono text-xs text-foreground font-medium">{inv.invoice_number}</TableCell>
                                 <TableCell className="text-muted-foreground text-sm">{inv.client?.company_name || "Unknown"}</TableCell>
                                 <TableCell>
-                                    <Badge variant="outline" className={`
-                                        ${inv.status === 'PAID' ? 'bg-green-50 text-green-700 border-green-200' : ''}
-                                        ${inv.status === 'SENT' ? 'bg-blue-50 text-blue-700 border-blue-200' : ''}
-                                        ${inv.status === 'OVERDUE' ? 'bg-red-50 text-red-700 border-red-200' : ''}
-                                        ${inv.status === 'PARTIAL' ? 'bg-orange-50 text-orange-700 border-orange-200' : ''}
-                                    `}>
-                                        {inv.status}
-                                    </Badge>
+                                    <Badge variant="outline" className={cn(
+                                        inv.status === 'PAID' && 'bg-green-50 text-green-700 border-green-200',
+                                        inv.status === 'SENT' && 'bg-blue-50 text-blue-700 border-blue-200',
+                                        inv.status === 'OVERDUE' && 'bg-red-50 text-red-700 border-red-200',
+                                        inv.status === 'PARTIAL' && 'bg-orange-50 text-orange-700 border-orange-200'
+                                    )}>{inv.status}</Badge>
                                 </TableCell>
                                 <TableCell className="text-right font-bold text-foreground">
                                     {formatCurrency(Number(inv.grand_total))}
@@ -258,7 +450,7 @@ export default function DashboardPage() {
   );
 }
 
-// Reusable Metric Card
+// Reusable Metric Card (Unchanged)
 function MetricCard({ title, value, icon, color, bg }: any) {
     const formatCurrency = (val: number) => new Intl.NumberFormat('en-IN', { style: 'currency', currency: 'INR', maximumFractionDigits: 0 }).format(val);
     return (
