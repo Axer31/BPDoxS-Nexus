@@ -11,7 +11,7 @@ import { Settings, RefreshCw, Check } from "lucide-react";
 import { cn } from "@/lib/utils";
 
 export function Configurator() {
-  const { theme, setTheme } = useTheme();
+  const { theme, setTheme, resolvedTheme } = useTheme(); // Use resolvedTheme
   const { 
     sidebarType, setSidebarType, 
     contrastMode, setContrastMode,
@@ -20,23 +20,34 @@ export function Configurator() {
     resetConfig
   } = useConfigurator();
 
-  const isMidnight = theme === 'dark' && darkStyle === 'midnight';
+  // FIX: Check resolvedTheme to ensure it works even if theme is 'system'
+  const isDark = theme === 'dark' || resolvedTheme === 'dark';
+  const isMidnight = isDark && darkStyle === 'midnight';
 
-  // 1. Apply Brand Color (White for Midnight, User Selected for others)
+  // 1. Apply Brand Color & Theme Attribute
   useEffect(() => {
     const root = document.documentElement;
     
     if (isMidnight) {
-        // FORCE WHITE (0 0% 100%) in Midnight Mode
-        root.style.setProperty('--primary', '0 0% 100%');
+        // FORCE ATTRIBUTE & COLORS
+        root.setAttribute('data-style', 'midnight');
+        root.style.setProperty('--primary', '0 0% 100%'); 
         root.style.setProperty('--ring', '0 0% 100%');
     } else {
-        // Use User Selected Color
+        // REMOVE ATTRIBUTE & RESTORE COLOR
+        root.removeAttribute('data-style');
         const hsl = hexToHsl(primaryColor);
         root.style.setProperty('--primary', hsl);
         root.style.setProperty('--ring', hsl);
     }
   }, [primaryColor, isMidnight]);
+
+  // 2. Select Midnight (Forces Dark Mode)
+  const handleMidnightSelect = () => {
+    setTheme('dark');
+    setDarkStyle('midnight');
+    setContrastMode('transparent'); 
+  };
 
   // 2. Apply Theme Attribute
   useEffect(() => {
@@ -47,12 +58,6 @@ export function Configurator() {
         root.removeAttribute('data-style');
     }
   }, [isMidnight]);
-
-  // 3. Force Glassmorphism when entering Midnight mode
-  const handleMidnightSelect = () => {
-    setDarkStyle('midnight');
-    setContrastMode('transparent'); // Enforce Glass
-  };
 
   const brandColors = [
     "#4318FF", "#39B8FF", "#7B61FF", "#00B69B", "#FFB547", "#E31A1A",

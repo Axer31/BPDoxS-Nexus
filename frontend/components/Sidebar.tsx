@@ -103,13 +103,13 @@ export function Sidebar({ className, hideLogo = false, forceExpand = false }: Si
       {!hideLogo && (
         <div className={cn("h-20 flex items-center px-6 shrink-0", isMini && "justify-center px-0")}>
            <div className="flex items-center gap-3">
-              <div className="h-10 w-10 bg-primary rounded-xl flex items-center justify-center shadow-lg shadow-primary/30 text-white font-black text-xl shrink-0">
-                  {/* Dynamic First Letter */}
+              {/* CHANGE: text-white -> text-primary-foreground */}
+              <div className="h-10 w-10 bg-primary rounded-xl flex items-center justify-center shadow-lg shadow-primary/30 text-primary-foreground font-black text-xl shrink-0">
                   {softwareName.charAt(0).toUpperCase()}
               </div>
+              
               {!isMini && (
                 <h2 className="text-2xl font-bold tracking-tight text-foreground whitespace-nowrap overflow-hidden">
-                  {/* Dynamic Software Name */}
                   {getSoftwareNameParts()}
                 </h2>
               )}

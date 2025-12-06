@@ -4,7 +4,7 @@
 
 @layer base {
   :root {
-    /* --- HORIZON LIGHT THEME (Keep existing) --- */
+    /* --- HORIZON LIGHT THEME --- */
     --background: 210 33% 96%;
     --foreground: 222 47% 11%;
     --card: 0 0% 100%;
@@ -50,32 +50,37 @@
     --ring: 251 100% 65%;
   }
 
-  /* --- NEW: MIDNIGHT THEME (Pure Black / OLED) --- */
-  .dark[data-style='midnight'] {
+  /* --- MIDNIGHT BLACK THEME OVERRIDES --- */
+  html.dark[data-style='midnight'] {
     --background: 0 0% 0%;       /* Pure Black */
-    --foreground: 0 0% 98%;
+    --foreground: 0 0% 100%;     /* Pure White */
     
-    --card: 0 0% 9%;             /* #171717 Deep Gray */
-    --card-foreground: 0 0% 98%;
+    /* Card Base */
+    --card: 0 0% 0%;             
+    --card-foreground: 0 0% 100%;
     
-    --popover: 0 0% 9%;
-    --popover-foreground: 0 0% 98%;
+    --popover: 0 0% 5%;
+    --popover-foreground: 0 0% 100%;
     
+    /* CRITICAL: Primary = White, Text = Black */
     --primary: 0 0% 100%;        
-    --primary-foreground: 0 0% 0%;
+    --primary-foreground: 0 0% 0%; 
     
-    --secondary: 0 0% 15%;
-    --secondary-foreground: 0 0% 98%;
+    --secondary: 0 0% 12%;
+    --secondary-foreground: 0 0% 100%;
     
-    --muted: 0 0% 15%;
-    --muted-foreground: 0 0% 65%;
+    --muted: 0 0% 12%;
+    --muted-foreground: 0 0% 60%;
     
-    --accent: 0 0% 15%;
-    --accent-foreground: 0 0% 98%;
+    --accent: 0 0% 12%;
+    --accent-foreground: 0 0% 100%;
     
-    --border: 0 0% 20%;          /* Subtle gray borders */
+    --destructive: 0 100% 50%;
+    --destructive-foreground: 0 0% 100%;
+    
+    --border: 0 0% 20%;          
     --input: 0 0% 20%;
-    --ring: 251 100% 65%;
+    --ring: 0 0% 100%;
   }
 }
 
@@ -86,11 +91,11 @@
   
   body {
     @apply bg-background text-foreground transition-colors duration-500 ease-in-out relative;
-    /* Important: Allows the DynamicBackground component to show through */
     background-color: hsl(var(--background)); 
     overflow-x: hidden;
   }
 
+  /* Orbs Code (Hidden in Midnight) */
   body::before,
   body::after {
     content: '';
@@ -105,7 +110,6 @@
     pointer-events: none;
   }
 
-  /* Light Mode Orbs */
   body::before {
     top: -10%;
     left: -10%;
@@ -118,14 +122,10 @@
     animation-delay: -10s;
   }
 
-  /* Dark Mode Orbs: Adjusted opacity */
-  .dark body::before {
-    opacity: 0.2;
-  }
-  .dark body::after {
-    opacity: 0.15;
-  }
+  .dark body::before { opacity: 0.2; }
+  .dark body::after { opacity: 0.15; }
 
+  /* HIDE Orbs in Midnight Mode */
   .dark[data-style='midnight'] body::before,
   .dark[data-style='midnight'] body::after {
       display: none !important;
@@ -133,79 +133,72 @@
 
   /* --- GLASSMORPHISM OVERRIDES --- */
   .dark[data-style='midnight'] .bg-card,
-  .dark[data-style='midnight'] [data-slot="card"] {
-      background-color: rgba(0, 0, 0, 0.4) !important; /* Lighter alpha for contrast against black bg */
-      backdrop-filter: blur(20px) saturate(0%) !important; /* Grayscale glass */
+  .dark[data-style='midnight'] [data-slot="card"],
+  .dark[data-style='midnight'] aside {
+      background-color: rgba(0, 0, 0, 0.4) !important;
+      backdrop-filter: blur(20px) saturate(0%) !important;
       border: 1px solid rgba(255, 255, 255, 0.15) !important;
-      box-shadow: 0 4px 20px rgba(255, 255, 255, 0.05) !important; /* Subtle white glow instead of black shadow */
+      box-shadow: 0 4px 20px rgba(255, 255, 255, 0.05) !important;
   }
 
-  /* Sidebar Glass */
   .dark[data-style='midnight'] aside {
       background-color: rgba(0, 0, 0, 0.6) !important;
-      backdrop-filter: blur(20px);
       border-right: 1px solid rgba(255, 255, 255, 0.15) !important;
   }
   
-  /* Header Glass */
   .dark[data-style='midnight'] header {
       background-color: rgba(0, 0, 0, 0.6) !important;
       border-bottom: 1px solid rgba(255, 255, 255, 0.15) !important;
   }
-
 }
 
 @layer components {
-  /* Fix Dropdowns/Popovers Transparency & Borders */
+  /* FIX: Use standard CSS for background to avoid circular @apply reference */
   .bg-popover {
-    @apply bg-white/95 dark:bg-[#111C44]/95 backdrop-blur-md border border-border shadow-2xl;
+    background-color: hsl(var(--popover) / 0.95);
+    @apply backdrop-blur-md border border-border shadow-2xl;
   }
   
-  /* Fix Date Picker Container */
+  /* Duplicate wrapper style just to be safe */
+  [data-radix-popper-content-wrapper] {
+    background-color: hsl(var(--popover) / 0.95);
+    @apply backdrop-blur-md border border-border shadow-2xl;
+  }
+
   .rdp {
     @apply bg-card rounded-xl shadow-xl p-4 border border-border m-0;
   }
+  
   .rdp-day_selected {
     @apply bg-primary text-primary-foreground hover:bg-primary/90 hover:text-primary-foreground focus:bg-primary focus:text-primary-foreground;
   }
   
-  /* Configurator Active Ring */
   .config-option-active {
     @apply ring-2 ring-primary ring-offset-2 ring-offset-background;
   }
 
-  .bg-popover, 
-  [data-radix-popper-content-wrapper] {
-    @apply bg-white/95 dark:bg-[#111C44]/95 backdrop-blur-md border border-border shadow-2xl !important;
-  }
-
-  /* Fix text color inside dropdowns if they are blending in */
+  /* FIX: Use standard foreground variable so it adapts to black/white */
   .text-popover-foreground {
-    @apply text-slate-800 dark:text-white !important;
+    @apply text-foreground;
   }
 }
 
 @layer utilities {
-  /* --- GLASSMORPHISM --- */
   .glass {
-    /* Lighter background + Stronger Blur + Thin border */
-    @apply bg-white/60 dark:bg-[#111C44]/60 backdrop-blur-xl border border-white/40 dark:border-white/5 shadow-lg;
+    @apply bg-white/60 dark:bg-card/60 backdrop-blur-xl border border-white/40 dark:border-white/5 shadow-lg;
   }
   
-  /* Solid fallback */
   .solid-card {
     @apply bg-card border border-border shadow-sm;
   }
 
-  /* Custom Shadows */
   .shadow-horizon {
     box-shadow: 0px 18px 40px rgba(112, 144, 176, 0.12);
   }
   .dark .shadow-horizon {
-    box-shadow: none; /* Flat depth for dark mode */
+    box-shadow: none; 
   }
 
-  /* Animation Keyframes */
   @keyframes float {
     0% { transform: translate(0, 0) scale(1); }
     50% { transform: translate(5%, 10%) scale(1.1); }
@@ -227,7 +220,6 @@
     animation-direction: alternate;
   }
 
-  /* --- SCROLLBAR STYLING --- */
   ::-webkit-scrollbar {
     width: 6px;
     height: 6px;
@@ -241,18 +233,6 @@
   ::-webkit-scrollbar-thumb:hover {
     @apply bg-slate-400 dark:bg-slate-600;
   }
-
-  /* --- SAFETY NET: Force hardcoded slate classes to behave in Dark Mode --- */
-  .dark .text-slate-900 { color: hsl(var(--foreground)) !important; }
-  .dark .text-slate-800 { color: hsl(var(--foreground)) !important; }
-  .dark .text-slate-700 { color: hsl(var(--muted-foreground)) !important; }
-  .dark .text-slate-600 { color: hsl(var(--muted-foreground)) !important; }
-  .dark .text-slate-500 { color: hsl(var(--muted-foreground)) !important; }
   
-  .dark .bg-white { background-color: hsl(var(--card)) !important; }
-  .dark .bg-slate-50 { background-color: hsl(var(--background)) !important; }
-  .dark .bg-slate-100 { background-color: hsl(var(--border)) !important; }
-  
-  .dark .border-slate-200 { border-color: hsl(var(--border)) !important; }
-  .dark .border-slate-300 { border-color: hsl(var(--border)) !important; }
+  /* Removed the hardcoded 'text-slate' overrides that were breaking colors */
 }
