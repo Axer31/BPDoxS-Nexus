@@ -9,104 +9,94 @@ router.get('/stats', async (req, res) => {
   try {
     const { from, to } = req.query;
 
-    // 1. Date Filter
-    const dateFilter: any = {};
-    if (from && to) {
-        dateFilter.issue_date = {
-            gte: new Date(from as string),
-            lte: new Date(to as string)
-        };
-    }
+    // 1. Define Dates
+    const fromDate = from ? new Date(from as string) : undefined;
+    const toDate = to ? new Date(to as string) : undefined;
 
     // 2. AGGREGATES
-    
-    // A. Revenue (PAID only)
+
+    // A. Revenue (PAID): Uses payment_date
     const revenueAgg = await prisma.invoice.aggregate({
         _sum: { grand_total: true },
         where: {
-            ...dateFilter,
-            status: { in: ['PAID', 'Paid'] }
+            status: { in: ['PAID', 'Paid'] },
+            payment_date: { gte: fromDate, lte: toDate } // <--- Filter by Payment Date
         }
     });
 
-    // B. Pending (Sent/Overdue/Partial)
+    // B. Pending (Sent/Overdue): Uses issue_date (since they aren't paid yet)
     const pendingAgg = await prisma.invoice.aggregate({
         _sum: { grand_total: true },
         where: {
-            ...dateFilter,
-            status: { in: ['SENT', 'Sent', 'OVERDUE', 'Overdue', 'PARTIAL', 'Partial'] }
+            status: { in: ['SENT', 'Sent', 'OVERDUE', 'Overdue', 'PARTIAL', 'Partial'] },
+            issue_date: { gte: fromDate, lte: toDate } // <--- Keep issue_date
         }
     });
 
-    // C. Expenses
+    // C. Expenses: Uses date
     const expenseAgg = await prisma.expense.aggregate({
         _sum: { amount: true },
         where: {
-            date: dateFilter.issue_date 
+            date: { gte: fromDate, lte: toDate }
         }
     });
 
-    // FIX: Safely convert Decimal Aggregates
     const totalRevenue = Number(revenueAgg._sum.grand_total?.toString() || 0);
     const totalPending = Number(pendingAgg._sum.grand_total?.toString() || 0);
     const totalExpense = Number(expenseAgg._sum.amount?.toString() || 0);
     const netProfit = totalRevenue - totalExpense;
 
-    // 3. MONTHLY CHARTS
-    const allInvoices = await prisma.invoice.findMany({
+    // 3. MONTHLY CHARTS (Split Queries for Accuracy)
+    
+    // Fetch Paid Invoices (using payment_date)
+    const paidInvoices = await prisma.invoice.findMany({
         where: {
-            ...dateFilter,
-            status: { not: 'DRAFT' }
+            status: { in: ['PAID', 'Paid'] },
+            payment_date: { gte: fromDate, lte: toDate }
         },
-        select: { issue_date: true, grand_total: true, status: true }
+        select: { payment_date: true, grand_total: true }
     });
 
+    // Fetch Expenses (using date)
     const allExpenses = await prisma.expense.findMany({
-        where: { date: dateFilter.issue_date },
+        where: { date: { gte: fromDate, lte: toDate } },
         select: { date: true, amount: true }
     });
 
-    // Updated Map to track count for Avg Sale calculation
-    const statsMap = new Map<string, { revenue: number; expense: number; pending: number; count: number }>();
+    // Map for Charting
+    const statsMap = new Map<string, { revenue: number; expense: number; }>();
 
-    allInvoices.forEach(inv => {
-        const month = format(new Date(inv.issue_date), 'MMM yyyy');
-        // Initialize with count: 0
-        const existing = statsMap.get(month) || { revenue: 0, expense: 0, pending: 0, count: 0 };
-        
-        // FIX: Handle Decimal Conversion inside loop
-        const amount = Number(inv.grand_total?.toString() || 0);
-        const status = inv.status.toUpperCase(); 
-
-        if (status === 'PAID') {
-            existing.revenue += amount;
-            existing.count += 1; // Increment paid invoice count
-        } else {
-            existing.pending += amount;
-        }
+    // Process Revenue (bucket by payment_date)
+    paidInvoices.forEach(inv => {
+        // Fallback to current date if payment_date missing (shouldn't happen with new logic)
+        const d = inv.payment_date || new Date(); 
+        const month = format(d, 'MMM yyyy');
+        const existing = statsMap.get(month) || { revenue: 0, expense: 0 };
+        existing.revenue += Number(inv.grand_total?.toString() || 0);
         statsMap.set(month, existing);
     });
 
+    // Process Expenses (bucket by date)
     allExpenses.forEach(exp => {
         const month = format(new Date(exp.date), 'MMM yyyy');
-        // Initialize with count: 0
-        const existing = statsMap.get(month) || { revenue: 0, expense: 0, pending: 0, count: 0 };
-        // FIX: Handle Decimal Conversion
+        const existing = statsMap.get(month) || { revenue: 0, expense: 0 };
         existing.expense += Number(exp.amount?.toString() || 0);
         statsMap.set(month, existing);
     });
 
-    const monthlyStats = Array.from(statsMap.entries()).map(([month, val]) => ({
-        month,
-        revenue: val.revenue,
-        expense: val.expense,
-        pending: val.pending,
-        balance: val.revenue - val.expense,
-        // Calculate Avg Sale (Revenue / Count of Paid Invoices), prevent div by zero
-        avgSale: val.count > 0 ? (val.revenue / val.count) : 0 
-    }));
+    // Sort chronologically
+    const monthlyStats = Array.from(statsMap.entries())
+        .map(([month, val]) => ({
+            month,
+            revenue: val.revenue,
+            expense: val.expense,
+            balance: val.revenue - val.expense,
+            // Parse date for sorting
+            sortDate: new Date(month) 
+        }))
+        .sort((a, b) => a.sortDate.getTime() - b.sortDate.getTime());
 
-    // 4. TOP UNPAID (Tables)
+    // 4. TOP UNPAID (Tables) - Unchanged
     const topUnpaid = await prisma.invoice.findMany({
         where: {
             status: { in: ['SENT', 'OVERDUE', 'Sent', 'Overdue'] }

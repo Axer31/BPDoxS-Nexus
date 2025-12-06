@@ -143,6 +143,7 @@ model Invoice {
   status          String   @default("DRAFT") // DRAFT, SENT, PAID, OVERDUE
   issue_date      DateTime
   due_date        DateTime?
+  payment_date    DateTime?
   currency        String   @default("INR")
   
   // JSON Data Blobs for Flexibility

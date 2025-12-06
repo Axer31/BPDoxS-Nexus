@@ -5,23 +5,33 @@ const prisma = new PrismaClient();
 export class LedgerService {
 
   static async getLedger(from?: string, to?: string) {
-    // 1. Build Date Filter
-    const dateFilter: any = {};
+    // 1. Build Date Filter for INCOME (Uses payment_date)
+    const paymentDateFilter: any = {};
+    // 2. Build Date Filter for EXPENSES (Uses date)
+    const expenseDateFilter: any = {};
+
     if (from && to) {
-        dateFilter.gte = new Date(from);
-        dateFilter.lte = new Date(to);
+        const fromDate = new Date(from);
+        const toDate = new Date(to);
+        
+        paymentDateFilter.gte = fromDate;
+        paymentDateFilter.lte = toDate;
+
+        expenseDateFilter.gte = fromDate;
+        expenseDateFilter.lte = toDate;
     }
 
-    // 2. Fetch Income (Strictly 'PAID' or 'Paid')
+    // 2. Fetch Income (Strictly 'PAID' and uses payment_date)
     const invoices = await prisma.invoice.findMany({
       where: {
         status: { in: ['PAID', 'Paid'] }, 
-        issue_date: dateFilter 
+        payment_date: paymentDateFilter // <--- Changed from issue_date
       },
       select: {
         id: true,
         invoice_number: true,
         issue_date: true,
+        payment_date: true, // <--- Fetch this
         grand_total: true,
         client: { select: { company_name: true } }
       }
@@ -29,7 +39,7 @@ export class LedgerService {
 
     // 3. Fetch Expenses
     const expenses = await prisma.expense.findMany({
-      where: { date: dateFilter },
+      where: { date: expenseDateFilter },
       select: {
         id: true,
         date: true,
@@ -42,16 +52,19 @@ export class LedgerService {
     // 4. Normalize & Fix Decimal Conversion
     const creditEntries = invoices.map(inv => {
       const amount = Number(inv.grand_total?.toString() || 0);
+      // Use payment_date if available, fallback to issue_date (for old data)
+      const actualDate = inv.payment_date || inv.issue_date; 
+
       return {
         id: `INV-${inv.id}`,
-        date: inv.issue_date,
+        date: actualDate, 
         description: `Invoice #${inv.invoice_number} - ${inv.client.company_name}`,
-        ref: inv.invoice_number, // <--- Added ref for table display
+        ref: inv.invoice_number,
         category: 'Sales / Revenue',
         type: 'CREDIT',
         amount: amount,
-        credit: amount, // <--- Populated for UI/PDF calculation
-        debit: 0        // <--- Populated to prevent NaN
+        credit: amount, 
+        debit: 0        
       };
     });
 
@@ -65,8 +78,8 @@ export class LedgerService {
         category: exp.category,
         type: 'DEBIT',
         amount: amount,
-        credit: 0,      // <--- Populated to prevent NaN
-        debit: amount   // <--- Populated for UI/PDF calculation
+        credit: 0,      
+        debit: amount   
       };
     });
 

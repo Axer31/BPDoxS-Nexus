@@ -74,18 +74,24 @@ router.get('/:id/pdf', async (req, res) => {
 });
 
 
-// UPDATE STATUS ROUTE (Fix Casing)
+// UPDATE STATUS ROUTE
 router.patch('/:id/status', async (req: Request, res: Response) => {
   try {
     const id = Number(req.params.id);
     const { status } = req.body;
 
-    // FIX: Force uppercase to ensure consistency (PAID, SENT, DRAFT)
+    // Force uppercase (PAID, SENT, DRAFT)
     const normalizedStatus = status ? status.toUpperCase() : status;
+
+    // LOGIC: Set payment_date if PAID, otherwise null
+    const paymentDate = normalizedStatus === 'PAID' ? new Date() : null;
 
     const updated = await prisma.invoice.update({
         where: { id },
-        data: { status: normalizedStatus }
+        data: { 
+          status: normalizedStatus,
+          payment_date: paymentDate // <--- Update the date
+        }
     });
 
     // Log Activity
@@ -101,7 +107,6 @@ router.patch('/:id/status', async (req: Request, res: Response) => {
     res.status(500).json({ error: "Failed to update status" });
   }
 });
-// ---------------------------------------------
 
 // Get Single Invoice
 router.get('/:id', async (req, res) => {
