@@ -14,26 +14,25 @@ router.get('/stats', async (req, res) => {
     const toDate = to ? new Date(to as string) : undefined;
 
     // 2. AGGREGATES
-
-    // A. Revenue (PAID): Uses payment_date
+    // A. Revenue (PAID)
     const revenueAgg = await prisma.invoice.aggregate({
         _sum: { grand_total: true },
         where: {
             status: { in: ['PAID', 'Paid'] },
-            payment_date: { gte: fromDate, lte: toDate } // <--- Filter by Payment Date
+            payment_date: { gte: fromDate, lte: toDate }
         }
     });
 
-    // B. Pending (Sent/Overdue): Uses issue_date (since they aren't paid yet)
+    // B. Pending
     const pendingAgg = await prisma.invoice.aggregate({
         _sum: { grand_total: true },
         where: {
             status: { in: ['SENT', 'Sent', 'OVERDUE', 'Overdue', 'PARTIAL', 'Partial'] },
-            issue_date: { gte: fromDate, lte: toDate } // <--- Keep issue_date
+            issue_date: { gte: fromDate, lte: toDate }
         }
     });
 
-    // C. Expenses: Uses date
+    // C. Expenses
     const expenseAgg = await prisma.expense.aggregate({
         _sum: { amount: true },
         where: {
@@ -46,9 +45,7 @@ router.get('/stats', async (req, res) => {
     const totalExpense = Number(expenseAgg._sum.amount?.toString() || 0);
     const netProfit = totalRevenue - totalExpense;
 
-    // 3. MONTHLY CHARTS (Split Queries for Accuracy)
-    
-    // Fetch Paid Invoices (using payment_date)
+    // 3. MONTHLY CHARTS
     const paidInvoices = await prisma.invoice.findMany({
         where: {
             status: { in: ['PAID', 'Paid'] },
@@ -57,46 +54,53 @@ router.get('/stats', async (req, res) => {
         select: { payment_date: true, grand_total: true }
     });
 
-    // Fetch Expenses (using date)
     const allExpenses = await prisma.expense.findMany({
         where: { date: { gte: fromDate, lte: toDate } },
         select: { date: true, amount: true }
     });
 
-    // Map for Charting
-    const statsMap = new Map<string, { revenue: number; expense: number; }>();
+    // FIXED: Track 'count' to calculate Average Sale
+    const statsMap = new Map<string, { revenue: number; expense: number; count: number }>();
 
-    // Process Revenue (bucket by payment_date)
+    // Process Revenue
     paidInvoices.forEach(inv => {
-        // Fallback to current date if payment_date missing (shouldn't happen with new logic)
         const d = inv.payment_date || new Date(); 
         const month = format(d, 'MMM yyyy');
-        const existing = statsMap.get(month) || { revenue: 0, expense: 0 };
+        
+        // Initialize if not exists
+        const existing = statsMap.get(month) || { revenue: 0, expense: 0, count: 0 };
+        
         existing.revenue += Number(inv.grand_total?.toString() || 0);
+        existing.count += 1; // Increment invoice count
+        
         statsMap.set(month, existing);
     });
 
-    // Process Expenses (bucket by date)
+    // Process Expenses
     allExpenses.forEach(exp => {
         const month = format(new Date(exp.date), 'MMM yyyy');
-        const existing = statsMap.get(month) || { revenue: 0, expense: 0 };
+        // Ensure we preserve existing revenue/count if expense comes later
+        const existing = statsMap.get(month) || { revenue: 0, expense: 0, count: 0 };
+        
         existing.expense += Number(exp.amount?.toString() || 0);
+        
         statsMap.set(month, existing);
     });
 
-    // Sort chronologically
+    // Sort chronologically & Calculate Avg Sale
     const monthlyStats = Array.from(statsMap.entries())
         .map(([month, val]) => ({
             month,
             revenue: val.revenue,
             expense: val.expense,
             balance: val.revenue - val.expense,
-            // Parse date for sorting
+            // FIX: Calculate Average Sale (Avoid division by zero)
+            avgSale: val.count > 0 ? val.revenue / val.count : 0,
             sortDate: new Date(month) 
         }))
         .sort((a, b) => a.sortDate.getTime() - b.sortDate.getTime());
 
-    // 4. TOP UNPAID (Tables) - Unchanged
+    // 4. TOP UNPAID
     const topUnpaid = await prisma.invoice.findMany({
         where: {
             status: { in: ['SENT', 'OVERDUE', 'Sent', 'Overdue'] }

@@ -52,7 +52,7 @@ export function QuotationItemsTable({ items, setItems, currency = "INR" }: Quota
       <div className="border rounded-md overflow-hidden">
         {/* table-fixed ensures columns respect the w-[px] classes */}
         <Table className="table-fixed w-full">
-          <TableHeader className="bg-slate-100 dark:bg-slate-800">
+          <TableHeader className="bg-background">
             <TableRow>
               {/* Description takes remaining space */}
               <TableHead className="w-auto px-3 text-left">Description</TableHead>
@@ -99,7 +99,7 @@ export function QuotationItemsTable({ items, setItems, currency = "INR" }: Quota
                     className="h-9 text-right px-2"
                   />
                 </TableCell>
-                <TableCell className="p-2 text-right font-bold text-sm text-slate-600">
+                <TableCell className="p-2 text-right font-bold text-sm text-primary">
                   {new Intl.NumberFormat('en-IN', { style: 'currency', currency: currency }).format(item.amount)}
                 </TableCell>
                 <TableCell className="p-2 text-center">

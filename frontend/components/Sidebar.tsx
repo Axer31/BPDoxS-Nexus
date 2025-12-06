@@ -157,15 +157,6 @@ export function Sidebar({ className, hideLogo = false, forceExpand = false }: Si
       <div className="mt-auto border-t border-border/50 bg-card/50 backdrop-blur-sm p-4 flex flex-col gap-4 shrink-0">
         
         {/* Search (Hidden in Mini) */}
-        {!isMini && (
-          <div className="relative">
-              <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
-              <Input 
-                placeholder="Search..." 
-                className="pl-9 h-10 bg-background border-border/50 focus-visible:ring-primary/20 rounded-xl text-sm shadow-sm" 
-              />
-          </div>
-        )}
 
         {/* Profile Card (Unchanged) */}
         <div className={cn(

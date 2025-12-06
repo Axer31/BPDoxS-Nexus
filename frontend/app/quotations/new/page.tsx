@@ -111,7 +111,7 @@ export default function NewQuotationPage() {
                 <p className="text-sm text-muted-foreground">Create a new proposal</p>
             </div>
         </div>
-        <Button onClick={handleSave} disabled={isSaving} className="bg-primary text-white hover:bg-primary/90 shadow-lg shadow-primary/25">
+        <Button onClick={handleSave} disabled={isSaving} className="bg-primary text-primary-foreground hover:bg-primary/90 shadow-lg shadow-primary/25">
           {isSaving ? <Loader2 className="w-4 h-4 animate-spin mr-2" /> : <Save className="w-4 h-4 mr-2" />}
           Save Quote
         </Button>

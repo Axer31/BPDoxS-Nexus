@@ -80,7 +80,7 @@ export function BackupSettings() {
                     <CardDescription>Full system snapshot (Encrypted .iec file)</CardDescription>
                 </CardHeader>
                 <CardContent className="space-y-4">
-                    <div className="p-4 border rounded-lg bg-slate-50 dark:bg-slate-900 flex justify-between items-center">
+                    <div className="p-4 border rounded-lg bg-background dark:bg-background flex justify-between items-center">
                         <div><h4 className="font-bold text-sm">Export Data</h4></div>
                         <Button variant="outline" onClick={downloadBackup}>
                             <Download className="w-4 h-4 mr-2"/> Download

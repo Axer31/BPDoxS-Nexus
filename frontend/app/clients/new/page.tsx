@@ -94,11 +94,11 @@ export default function NewClientPage() {
              <Button variant="outline" size="icon"><ArrowLeft className="w-4 h-4" /></Button>
           </Link>
           <div>
-             <h1 className="text-2xl font-bold text-slate-900">Add New Client</h1>
+             <h1 className="text-2xl font-bold text-primary">Add New Client</h1>
              <p className="text-sm text-slate-500">Create a customer profile</p>
           </div>
         </div>
-        <Button onClick={handleSubmit} disabled={loading} className="bg-slate-900 hover:bg-slate-800">
+        <Button onClick={handleSubmit} disabled={loading} className="bg-primary hover:bg-slate-800">
           {loading ? <Loader2 className="w-4 h-4 animate-spin mr-2" /> : <Save className="w-4 h-4 mr-2" />}
           Save Client
         </Button>
@@ -182,7 +182,7 @@ export default function NewClientPage() {
                     <div className="space-y-2"><Label>Phone</Label><Input name="phone" type="tel" onChange={handleChange} /></div>
                 </div>
                 <div className="pt-4 border-t mt-4 space-y-3">
-                     <Label className="flex items-center gap-2 text-slate-500"><MapPin className="w-3 h-3"/> Billing Address</Label>
+                     <Label className="flex items-center gap-2 text-primary"><MapPin className="w-3 h-3"/> Billing Address</Label>
                      <Input name="address_street" placeholder="Street Address" onChange={handleChange} />
                      <div className="grid grid-cols-2 gap-4">
                         <Input name="address_city" placeholder="City" onChange={handleChange} />

@@ -94,7 +94,7 @@ export function BankSettings({ disabled }: BankSettingsProps) {
                                     <p className="text-xs text-primary font-medium mt-1">Method: {bank.payment_method}</p>
                                 )}
 
-                                <div className="text-[10px] text-muted-foreground grid grid-cols-2 gap-x-4 gap-y-1 mt-2">
+                                <div className="text-[10px] bg- text-muted-foreground grid grid-cols-2 gap-x-4 gap-y-1 mt-2">
                                     {bank.routing_number && <span>Routing: {bank.routing_number}</span>}
                                     {bank.swift_code && <span>SWIFT: {bank.swift_code}</span>}
                                     {bank.iban && <span>IBAN: {bank.iban}</span>}
@@ -171,7 +171,7 @@ export function BankSettings({ disabled }: BankSettingsProps) {
                     </div>
 
                     {/* International Codes (Grid) */}
-                    <div className="grid grid-cols-3 gap-4 bg-slate-50 dark:bg-slate-900 p-3 rounded-lg border">
+                    <div className="grid grid-cols-3 gap-4 bg-background dark:bg-background p-3 rounded-lg border">
                          <div className="space-y-2">
                             <Label className="text-xs">Routing Number</Label>
                             <Input className="h-8 text-sm" value={form.routing_number || ''} onChange={e => setForm({...form, routing_number: e.target.value})} placeholder="021..." />
