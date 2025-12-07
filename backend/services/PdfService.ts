@@ -28,11 +28,13 @@ export class PdfService {
     });
 
     // 4. PREPARE DATA
+    // Create a mutable copy of the profile data
     let profileData: any = ownerSettings?.json_value 
         ? JSON.parse(JSON.stringify(ownerSettings.json_value)) 
         : {};
 
     // 5. RESOLVE STATE NAME
+    // If we have a state code (e.g. 27), fetch the name (Maharashtra) from DB
     if (profileData.state_code) {
         try {
             const stateRecord = await prisma.state.findUnique({
@@ -40,7 +42,10 @@ export class PdfService {
             });
             
             if (stateRecord) {
+                // Overwrite the 'state' field with the real name
                 profileData.state = stateRecord.name;
+                
+                // Optional: Ensure country is correct if missing
                 if (!profileData.country) {
                     profileData.country = stateRecord.country;
                 }
@@ -52,8 +57,10 @@ export class PdfService {
 
     console.log(`[PdfService] Generating HTML for Invoice #${invoice.invoice_number}`);
     
-    // 6. WRAP DATA FOR TEMPLATE
+    // 6. WRAP DATA FOR TEMPLATE (THE FIX)
+    // The template expects `arg.json_value`, so we wrap our modified data
     const templateArg = { json_value: profileData };
+
     const htmlContent = generateInvoiceHTML(invoice, templateArg);
 
     return await this.createPdf(htmlContent);
@@ -71,10 +78,12 @@ export class PdfService {
       where: { key: 'COMPANY_PROFILE' } 
     });
 
+    // Prepare Profile Data (Same logic as Invoice)
     let profileData: any = ownerSettings?.json_value 
         ? JSON.parse(JSON.stringify(ownerSettings.json_value)) 
         : {};
 
+    // Resolve State
     if (profileData.state_code) {
         try {
             const stateRecord = await prisma.state.findUnique({
@@ -86,7 +95,9 @@ export class PdfService {
 
     console.log(`[PdfService] Generating HTML for Quotation #${quotation.quotation_number}`);
     
+    // Wrap for template
     const templateArg = { json_value: profileData };
+    
     const htmlContent = generateQuotationHTML(quotation, templateArg);
     
     return await this.createPdf(htmlContent);
@@ -101,6 +112,7 @@ export class PdfService {
       where: { key: 'COMPANY_PROFILE' } 
     });
 
+    // Ledger template logic might vary, but consistently passing the wrapped object is safest
     const templateArg = ownerSettings || { json_value: {} };
 
     console.log(`[PdfService] Generating Ledger PDF (${filterLabel})`);
@@ -109,46 +121,33 @@ export class PdfService {
     return await this.createPdf(htmlContent);
   }
 
-  private static async createPdf(html: string): Promise<Buffer> {
+  private static async createPdf(html: string) {
     let browser;
     try {
         browser = await puppeteer.launch({
           executablePath: process.env.PUPPETEER_EXECUTABLE_PATH, 
-          // Optimized args for ARM64/VPS environments
           args: [
             '--no-sandbox', 
             '--disable-setuid-sandbox',
-            '--disable-dev-shm-usage', // Prevents memory crashes on low-RAM VPS
+            '--disable-dev-shm-usage',
             '--disable-gpu',
-            '--font-render-hinting=none',
-            '--disable-extensions',
-            '--hide-scrollbars'
+            '--font-render-hinting=none'
           ],
           headless: true
         });
 
         const page = await browser.newPage();
         
-        // Set viewport to A4 dimensions (approx) to ensure responsiveness triggers correctly
-        await page.setViewport({ width: 794, height: 1123, deviceScaleFactor: 2 });
+        await page.setContent(html, { waitUntil: 'domcontentloaded' });
 
-        // Use networkidle0 to ensure images (logos/signatures) are fully loaded
-        await page.setContent(html, { 
-            waitUntil: ['domcontentloaded', 'networkidle0'],
-            timeout: 30000 
-        });
-
-        // Generate PDF as Uint8Array
-        const pdfData = await page.pdf({
+        const pdfBuffer = await page.pdf({
           format: 'A4',
           printBackground: true,
           margin: { top: '20px', bottom: '20px', left: '20px', right: '20px' }
         });
 
-        console.log(`[PdfService] PDF Generated. Size: ${pdfData.length} bytes`);
-        
-        // CRITICAL FIX: Explicitly convert Uint8Array to Node Buffer
-        return Buffer.from(pdfData);
+        console.log("[PdfService] PDF Generated Successfully.");
+        return pdfBuffer;
 
     } catch (error) {
         console.error("[PdfService] Generation Failed:", error);

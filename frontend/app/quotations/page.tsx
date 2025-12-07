@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useEffect, useState, useMemo } from 'react';
+import React, { useEffect, useState } from 'react';
 import api from "@/lib/api";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -18,10 +18,8 @@ import {
   Plus, FileText, Loader2, Trash2, Eye, Pencil, Search, Calendar as CalendarIcon, X 
 } from "lucide-react";
 import Link from "next/link";
-import { 
-  format, isWithinInterval, startOfDay, endOfDay, 
-  startOfMonth, startOfQuarter, startOfYear 
-} from "date-fns";
+import { format, isWithinInterval, startOfDay, endOfDay } from "date-fns";
+import { Badge } from "@/components/ui/badge";
 import { cn } from "@/lib/utils";
 import { DateRange } from "react-day-picker";
 import { AVAILABLE_CURRENCIES } from "@/lib/currencies"; // Import currency helper
@@ -58,15 +56,12 @@ export default function QuotationListPage() {
   const [filteredQuotes, setFilteredQuotes] = useState<Quotation[]>([]);
   const [loading, setLoading] = useState(true);
   
-  // --- VIEW MODAL STATE ---
+  // --- VIEW MODAL STATE (Kept for quick look) ---
   const [selectedQuote, setSelectedQuote] = useState<Quotation | null>(null);
   const [isViewOpen, setIsViewOpen] = useState(false);
 
   // --- FILTER STATE ---
   const [searchTerm, setSearchTerm] = useState("");
-  
-  // Mutually Exclusive Date Logic
-  const [periodFilter, setPeriodFilter] = useState("ALL"); 
   const [dateRange, setDateRange] = useState<DateRange | undefined>();
 
   // --- 1. FETCH DATA ---
@@ -86,34 +81,7 @@ export default function QuotationListPage() {
     fetchData();
   }, []);
 
-  // --- 2. CALCULATE FINANCIAL YEARS ---
-  const availableFYs = useMemo(() => {
-      const years = new Set<number>();
-      const currentYear = new Date().getFullYear();
-      years.add(currentYear);
-      
-      quotes.forEach(q => {
-          const d = new Date(q.issue_date);
-          const month = d.getMonth();
-          const year = d.getFullYear();
-          // FY Logic: If Jan-Mar (0-2), it belongs to previous year's FY start
-          years.add(month < 3 ? year - 1 : year);
-      });
-      return Array.from(years).sort((a, b) => b - a);
-  }, [quotes]);
-
-  // --- 3. FILTER HANDLERS (Mutually Exclusive) ---
-  const handlePeriodChange = (val: string) => {
-      setPeriodFilter(val);
-      setDateRange(undefined); // Clear Range when Preset is chosen
-  };
-
-  const handleDateRangeSelect = (range: DateRange | undefined) => {
-      setDateRange(range);
-      if(range) setPeriodFilter("CUSTOM"); // Clear Preset when Range is chosen
-  };
-
-  // --- 4. FILTER LOGIC ---
+  // --- 2. FILTER LOGIC ---
   useEffect(() => {
     let temp = quotes;
 
@@ -125,40 +93,20 @@ export default function QuotationListPage() {
             q.client.company_name.toLowerCase().includes(lower)
         );
     }
-
-    // Date Logic (Mutually Exclusive)
-    const now = new Date();
-    let start: Date | null = null;
-    let end: Date | null = endOfDay(now);
-
+    // Date Range (Calendar)
     if (dateRange?.from) {
-        // CASE 1: Custom Range
-        start = startOfDay(dateRange.from);
-        end = dateRange.to ? endOfDay(dateRange.to) : endOfDay(dateRange.from);
-    } else if (periodFilter !== "CUSTOM" && periodFilter !== "ALL") {
-        // CASE 2: Preset Period
-        if (periodFilter.startsWith("FY-")) {
-            const startYear = parseInt(periodFilter.split("-")[1]);
-            start = new Date(startYear, 3, 1); // April 1st
-            end = new Date(startYear + 1, 2, 31, 23, 59, 59); // March 31st next year
-        } else {
-             switch (periodFilter) {
-                case 'monthly': start = startOfMonth(now); break;
-                case 'quarterly': start = startOfQuarter(now); break;
-                case 'yearly': start = startOfYear(now); break;
-            }
-        }
-    }
-
-    // Apply Date Filter if Start/End are set
-    if (start && end) {
-        temp = temp.filter(q => isWithinInterval(new Date(q.issue_date), { start, end: end! }));
+        temp = temp.filter(q => {
+            const date = new Date(q.issue_date);
+            const start = startOfDay(dateRange.from!);
+            const end = dateRange.to ? endOfDay(dateRange.to) : endOfDay(dateRange.from!);
+            return isWithinInterval(date, { start, end });
+        });
     }
 
     setFilteredQuotes(temp);
-  }, [quotes, searchTerm, periodFilter, dateRange]);
+  }, [quotes, searchTerm, dateRange]);
 
-  // --- 5. ACTIONS ---
+  // --- 3. ACTIONS ---
 
   const handleDelete = async (id: number) => {
       if (!confirm("Delete this quotation?")) return;
@@ -208,7 +156,7 @@ export default function QuotationListPage() {
       </div>
 
       {/* FILTERS BAR */}
-      <div className="flex flex-col xl:flex-row gap-4 bg-card p-4 rounded-xl border border-border shadow-sm">
+      <div className="flex flex-col md:flex-row gap-4 bg-card p-4 rounded-xl border border-border shadow-sm">
           {/* Search */}
           <div className="relative flex-1">
               <Search className="absolute left-3 top-2.5 h-4 w-4 text-muted-foreground" />
@@ -220,35 +168,17 @@ export default function QuotationListPage() {
               />
           </div>
           
-          <div className="flex flex-wrap items-center gap-2">
-             {/* PRESET SELECTOR */}
-             <Select value={periodFilter} onValueChange={handlePeriodChange}>
-                <SelectTrigger className="w-[150px]">
-                    <SelectValue placeholder="Period" />
-                </SelectTrigger>
-                <SelectContent>
-                    <SelectItem value="ALL">All Time</SelectItem>
-                    <SelectItem value="monthly">This Month</SelectItem>
-                    <SelectItem value="quarterly">This Quarter</SelectItem>
-                    <SelectItem value="yearly">This Year</SelectItem>
-                    {availableFYs.map(year => (
-                        <SelectItem key={year} value={`FY-${year}`}>FY {year}-{year.toString().slice(-2) === '99' ? '00' : (year+1).toString().slice(-2)}</SelectItem>
-                    ))}
-                </SelectContent>
-             </Select>
-
-             <span className="text-muted-foreground text-xs font-bold uppercase px-1">OR</span>
-
-             {/* DATE RANGE PICKER */}
+          {/* Date Range Picker */}
+          <div className="flex items-center gap-2">
              <Popover>
                 <PopoverTrigger asChild>
                     <Button variant="outline" className={cn("w-[240px] justify-start text-left font-normal", !dateRange && "text-muted-foreground")}>
                         <CalendarIcon className="mr-2 h-4 w-4" />
                         {dateRange?.from ? (
                             dateRange.to ? (
-                                <>{format(dateRange.from, "LLL dd")} - {format(dateRange.to, "LLL dd")}</>
-                            ) : format(dateRange.from, "LLL dd")
-                        ) : <span>Custom Range</span>}
+                                <>{format(dateRange.from, "LLL dd, y")} - {format(dateRange.to, "LLL dd, y")}</>
+                            ) : format(dateRange.from, "LLL dd, y")
+                        ) : <span>Pick a date range</span>}
                     </Button>
                 </PopoverTrigger>
                 <PopoverContent className="w-auto p-0" align="end">
@@ -257,15 +187,13 @@ export default function QuotationListPage() {
                         mode="range"
                         defaultMonth={dateRange?.from}
                         selected={dateRange}
-                        onSelect={handleDateRangeSelect}
+                        onSelect={setDateRange}
                         numberOfMonths={2}
                     />
                 </PopoverContent>
              </Popover>
-             
-             {/* Clear Button */}
-             {(dateRange || periodFilter !== 'ALL') && (
-                 <Button variant="ghost" size="icon" onClick={() => handlePeriodChange('ALL')} title="Clear Filters">
+             {dateRange && (
+                 <Button variant="ghost" size="icon" onClick={() => setDateRange(undefined)} title="Clear Date Filter">
                      <X className="w-4 h-4" />
                  </Button>
              )}
@@ -333,7 +261,7 @@ export default function QuotationListPage() {
         </CardContent>
       </Card>
 
-      {/* === VIEW ONLY MODAL === */}
+      {/* === VIEW ONLY MODAL (PRESERVED) === */}
       <Dialog open={isViewOpen} onOpenChange={setIsViewOpen}>
         <DialogContent className="max-w-4xl max-h-[90vh] overflow-y-auto bg-card border-border shadow-2xl">
             <DialogHeader>

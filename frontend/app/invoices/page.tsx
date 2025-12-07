@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useEffect, useState, useMemo } from 'react';
+import React, { useEffect, useState } from 'react';
 import api from "@/lib/api";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -17,17 +17,14 @@ import {
   Loader2, Eye, Pencil, Search, Filter, Calendar as CalendarIcon, X, Share2, Trash2
 } from "lucide-react";
 import Link from "next/link";
-import { 
-  format, isWithinInterval, startOfDay, endOfDay,
-  startOfMonth, startOfQuarter, startOfYear
-} from "date-fns";
+import { format, isWithinInterval, startOfDay, endOfDay } from "date-fns";
 import { useRouter } from 'next/navigation';
 import { Calendar } from "@/components/ui/calendar";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { 
   Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter 
-} from "@/components/ui/dialog";
-import { Label } from "@/components/ui/label";
+} from "@/components/ui/dialog"; // <--- Added Dialog Imports
+import { Label } from "@/components/ui/label"; // <--- Added Label Import
 import { cn } from "@/lib/utils";
 import { DateRange } from "react-day-picker";
 import { useToast } from "@/components/ui/toast-context";
@@ -56,20 +53,16 @@ export default function InvoiceListPage() {
   const [loading, setLoading] = useState(true);
   const [actionLoadingId, setActionLoadingId] = useState<number | null>(null);
 
-  // --- FILTER STATE ---
+  // Filters
   const [searchTerm, setSearchTerm] = useState("");
   const [statusFilter, setStatusFilter] = useState("ALL");
-  
-  // Mutually Exclusive Date Logic
-  const [periodFilter, setPeriodFilter] = useState("ALL");
   const [dateRange, setDateRange] = useState<DateRange | undefined>();
 
-  // --- PAYMENT DIALOG STATE ---
+  // --- NEW: Payment Date Dialog State ---
   const [isPayDialogOpen, setIsPayDialogOpen] = useState(false);
   const [payDate, setPayDate] = useState<Date | undefined>(new Date());
   const [invoiceToPay, setInvoiceToPay] = useState<number | null>(null);
 
-  // --- 1. LOAD DATA ---
   useEffect(() => {
     const fetchInvoices = async () => {
       try {
@@ -86,6 +79,7 @@ export default function InvoiceListPage() {
     fetchInvoices();
   }, []);
 
+  // Filtering Logic
   // --- 2. CALCULATE FINANCIAL YEARS ---
   const availableFYs = useMemo(() => {
       const years = new Set<number>();
@@ -126,7 +120,7 @@ export default function InvoiceListPage() {
   useEffect(() => {
     let temp = invoices;
 
-    // A. Search
+    // 1. Search
     if (searchTerm) {
         const lower = searchTerm.toLowerCase();
         temp = temp.filter(inv => 
@@ -135,43 +129,25 @@ export default function InvoiceListPage() {
         );
     }
 
-    // B. Status
+    // 2. Status
     if (statusFilter !== "ALL") {
         temp = temp.filter(inv => inv.status === statusFilter);
     }
 
-    // C. Date Filter (Mutually Exclusive)
-    const now = new Date();
-    let start: Date | null = null;
-    let end: Date | null = endOfDay(now);
-
+    // 3. Date Range (Calendar)
     if (dateRange?.from) {
-        // CASE 1: Custom Range
-        start = startOfDay(dateRange.from);
-        end = dateRange.to ? endOfDay(dateRange.to) : endOfDay(dateRange.from);
-    } else if (periodFilter !== "CUSTOM" && periodFilter !== "ALL") {
-        // CASE 2: Preset Period
-        if (periodFilter.startsWith("FY-")) {
-            const startYear = parseInt(periodFilter.split("-")[1]);
-            start = new Date(startYear, 3, 1); // April 1st
-            end = new Date(startYear + 1, 2, 31, 23, 59, 59); // March 31st next year
-        } else {
-             switch (periodFilter) {
-                case 'monthly': start = startOfMonth(now); break;
-                case 'quarterly': start = startOfQuarter(now); break;
-                case 'yearly': start = startOfYear(now); break;
-            }
-        }
-    }
-
-    if (start && end) {
-        temp = temp.filter(inv => isWithinInterval(new Date(inv.issue_date), { start, end: end! }));
+        temp = temp.filter(inv => {
+            const date = new Date(inv.issue_date);
+            const start = startOfDay(dateRange.from!);
+            const end = dateRange.to ? endOfDay(dateRange.to) : endOfDay(dateRange.from!);
+            return isWithinInterval(date, { start, end });
+        });
     }
 
     setFilteredInvoices(temp);
-  }, [invoices, searchTerm, statusFilter, periodFilter, dateRange]);
+  }, [invoices, searchTerm, statusFilter, dateRange]);
 
-  // --- ACTION HANDLERS ---
+  // --- HANDLERS ---
 
   const handleViewPdf = async (id: number) => {
     try {
@@ -222,6 +198,7 @@ export default function InvoiceListPage() {
     }
   };
 
+  // Generic Status Change
   const handleStatusChange = async (id: number, status: string) => {
     try { 
         await api.patch(`/invoices/${id}/status`, { status }); 
@@ -233,15 +210,18 @@ export default function InvoiceListPage() {
     }
   };
 
+  // --- NEW: Open Mark Paid Dialog ---
   const openPayDialog = (id: number) => {
       setInvoiceToPay(id);
-      setPayDate(new Date()); 
+      setPayDate(new Date()); // Default to today
       setIsPayDialogOpen(true);
   };
 
+  // --- NEW: Confirm Payment with Date ---
   const handleConfirmPaid = async () => {
       if (!invoiceToPay) return;
       try {
+          // Pass the selected date to the backend
           await api.patch(`/invoices/${invoiceToPay}/status`, { 
               status: 'PAID',
               paymentDate: payDate 
@@ -283,9 +263,8 @@ export default function InvoiceListPage() {
         </Link>
       </div>
 
-      {/* FILTER BAR */}
-      <div className="flex flex-col xl:flex-row gap-4 bg-card p-4 rounded-xl border border-border shadow-sm">
-         {/* Search */}
+      {/* Filters Bar */}
+      <div className="flex flex-col md:flex-row gap-4 bg-card p-4 rounded-xl border border-border shadow-sm">
          <div className="relative flex-1">
             <Search className="absolute left-3 top-2.5 h-4 w-4 text-muted-foreground" />
             <Input 
@@ -296,50 +275,32 @@ export default function InvoiceListPage() {
             />
          </div>
          
-         <div className="flex flex-wrap items-center gap-2">
-            {/* Status Filter */}
-            <Select value={statusFilter} onValueChange={setStatusFilter}>
-                <SelectTrigger className="w-[140px]">
-                    <SelectValue placeholder="Status" />
-                </SelectTrigger>
-                <SelectContent>
-                    <SelectItem value="ALL">All Status</SelectItem>
-                    <SelectItem value="PAID">Paid</SelectItem>
-                    <SelectItem value="SENT">Sent</SelectItem>
-                    <SelectItem value="SHARED">Shared</SelectItem>
-                    <SelectItem value="DRAFT">Draft</SelectItem>
-                    <SelectItem value="OVERDUE">Overdue</SelectItem>
-                </SelectContent>
-            </Select>
+         <Select value={statusFilter} onValueChange={setStatusFilter}>
+            <SelectTrigger className="w-[160px]">
+                <Filter className="w-4 h-4 mr-2 text-muted-foreground" />
+                <SelectValue placeholder="Status" />
+            </SelectTrigger>
+            <SelectContent>
+                <SelectItem value="ALL">All Status</SelectItem>
+                <SelectItem value="PAID">Paid</SelectItem>
+                <SelectItem value="SENT">Sent</SelectItem>
+                <SelectItem value="SHARED">Shared</SelectItem>
+                <SelectItem value="DRAFT">Draft</SelectItem>
+                <SelectItem value="OVERDUE">Overdue</SelectItem>
+            </SelectContent>
+         </Select>
 
-            {/* PRESET SELECTOR (Month, Quarter, FY) */}
-            <Select value={periodFilter} onValueChange={handlePeriodChange}>
-                <SelectTrigger className="w-[150px]">
-                    <SelectValue placeholder="Period" />
-                </SelectTrigger>
-                <SelectContent>
-                    <SelectItem value="ALL">All Time</SelectItem>
-                    <SelectItem value="monthly">This Month</SelectItem>
-                    <SelectItem value="quarterly">This Quarter</SelectItem>
-                    <SelectItem value="yearly">This Year</SelectItem>
-                    {availableFYs.map(year => (
-                        <SelectItem key={year} value={`FY-${year}`}>FY {year}-{year.toString().slice(-2) === '99' ? '00' : (year+1).toString().slice(-2)}</SelectItem>
-                    ))}
-                </SelectContent>
-            </Select>
-
-            <span className="text-muted-foreground text-xs font-bold uppercase px-1">OR</span>
-
-            {/* DATE RANGE PICKER */}
+         {/* Date Range Picker */}
+         <div className="flex items-center gap-2">
              <Popover>
                 <PopoverTrigger asChild>
-                    <Button variant="outline" className={cn("w-[220px] justify-start text-left font-normal", !dateRange && "text-muted-foreground")}>
+                    <Button variant="outline" className={cn("w-[240px] justify-start text-left font-normal", !dateRange && "text-muted-foreground")}>
                         <CalendarIcon className="mr-2 h-4 w-4" />
                         {dateRange?.from ? (
                             dateRange.to ? (
-                                <>{format(dateRange.from, "LLL dd")} - {format(dateRange.to, "LLL dd")}</>
-                            ) : format(dateRange.from, "LLL dd")
-                        ) : <span>Custom Range</span>}
+                                <>{format(dateRange.from, "LLL dd, y")} - {format(dateRange.to, "LLL dd, y")}</>
+                            ) : format(dateRange.from, "LLL dd, y")
+                        ) : <span>Pick a date range</span>}
                     </Button>
                 </PopoverTrigger>
                 <PopoverContent className="w-auto p-0" align="end">
@@ -348,22 +309,15 @@ export default function InvoiceListPage() {
                         mode="range"
                         defaultMonth={dateRange?.from}
                         selected={dateRange}
-                        onSelect={handleDateRangeSelect}
+                        onSelect={setDateRange}
                         numberOfMonths={2}
                     />
                 </PopoverContent>
              </Popover>
-
-             {/* Clear Filter Button */}
-             {(dateRange || periodFilter !== 'ALL') && (
-                 <Button variant="ghost" size="icon" onClick={() => handlePeriodChange('ALL')}>
-                    <X className="w-4 h-4" />
-                 </Button>
-             )}
+             {dateRange && <Button variant="ghost" size="icon" onClick={() => setDateRange(undefined)}><X className="w-4 h-4" /></Button>}
          </div>
       </div>
 
-      {/* TABLE */}
       <Card className="shadow-horizon border-none bg-card">
         <CardHeader><CardTitle>Invoice List</CardTitle></CardHeader>
         <CardContent>
@@ -434,6 +388,7 @@ export default function InvoiceListPage() {
                               <DropdownMenuContent align="end">
                                 <DropdownMenuItem onClick={() => handleDownloadPdf(inv.id, inv.invoice_number)}>Download PDF</DropdownMenuItem>
                                 <DropdownMenuItem onClick={() => handleSendEmail(inv)}>Send Email</DropdownMenuItem>
+                                {/* UPDATED: Trigger Dialog instead of direct call */}
                                 <DropdownMenuItem onClick={() => openPayDialog(inv.id)}>Mark Paid</DropdownMenuItem>
                                 <DropdownMenuItem onClick={() => handleStatusChange(inv.id, 'SHARED')}>Mark Shared</DropdownMenuItem>
                                 <DropdownMenuItem onClick={() => handleStatusChange(inv.id, 'DRAFT')}>Mark Draft</DropdownMenuItem>
