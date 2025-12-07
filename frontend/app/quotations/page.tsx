@@ -15,14 +15,16 @@ import {
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { Calendar } from "@/components/ui/calendar";
 import { 
-  Plus, FileText, Loader2, Trash2, Eye, Pencil, Search, Calendar as CalendarIcon, X 
+  Plus, FileText, Loader2, Trash2, Eye, Pencil, Search, Filter, Calendar as CalendarIcon, X 
 } from "lucide-react";
 import Link from "next/link";
-import { format, isWithinInterval, startOfDay, endOfDay } from "date-fns";
+import { 
+  format, isWithinInterval, startOfDay, endOfDay, 
+  startOfMonth, startOfQuarter, startOfYear, subMonths 
+} from "date-fns";
 import { Badge } from "@/components/ui/badge";
 import { cn } from "@/lib/utils";
 import { DateRange } from "react-day-picker";
-import { AVAILABLE_CURRENCIES } from "@/lib/currencies"; // Import currency helper
 
 // Types
 interface QuoteItem {
@@ -39,7 +41,6 @@ interface Quotation {
   expiry_date?: string;
   grand_total: string;
   subtotal: string;
-  currency?: string; // Added currency field
   client: { 
     company_name: string;
     email?: string;
@@ -128,13 +129,8 @@ export default function QuotationListPage() {
       setIsViewOpen(true);
   };
 
-  // UPDATED: Dynamic Currency Formatting
-  const formatCurrency = (amount: number | string, currencyCode: string = "INR") => {
-      const selectedCurr = AVAILABLE_CURRENCIES.find(c => c.code === currencyCode);
-      return new Intl.NumberFormat(selectedCurr?.locale || 'en-IN', { 
-          style: 'currency', 
-          currency: currencyCode 
-      }).format(Number(amount));
+  const formatCurrency = (amount: number | string) => {
+      return new Intl.NumberFormat('en-IN', { style: 'currency', currency: 'INR' }).format(Number(amount));
   };
 
   return (
@@ -229,10 +225,7 @@ export default function QuotationListPage() {
                     <TableCell className="font-bold text-foreground font-mono">{q.quotation_number}</TableCell>
                     <TableCell className="font-medium text-muted-foreground">{q.client?.company_name}</TableCell>
                     <TableCell>{format(new Date(q.issue_date), "dd MMM yyyy")}</TableCell>
-                    <TableCell className="font-bold text-foreground">
-                        {/* Pass the currency code here */}
-                        {formatCurrency(q.grand_total, q.currency)}
-                    </TableCell>
+                    <TableCell className="font-bold text-foreground">{formatCurrency(q.grand_total)}</TableCell>
                     
                     <TableCell className="text-right">
                        <div className="flex justify-end items-center gap-1">
@@ -281,7 +274,7 @@ export default function QuotationListPage() {
                 <div className="space-y-8 py-4">
                     <div className="grid grid-cols-2 md:grid-cols-4 gap-4 p-4 bg-muted/30 rounded-xl border border-border/50">
                         <div><p className="text-xs font-semibold text-muted-foreground uppercase">Client</p><p className="text-sm font-bold mt-1">{selectedQuote.client.company_name}</p></div>
-                        <div><p className="text-xs font-semibold text-muted-foreground uppercase">Contact</p><p className="text-sm mt-1">{selectedQuote.client.phone || "—"}</p></div>
+                        <div><p className="text-xs font-semibold text-muted-foreground uppercase">Contact</p><p className="text-sm mt-1">{selectedQuote.client.phone || "—"}</p><p className="text-sm mt-1">{selectedQuote.client.email || "—"}</p></div>
                         <div><p className="text-xs font-semibold text-muted-foreground uppercase">Total</p><p className="text-sm mt-1 font-bold text-primary">{formatCurrency(selectedQuote.grand_total)}</p></div>
                     </div>
                     
@@ -302,12 +295,8 @@ export default function QuotationListPage() {
                                         <TableRow key={idx}>
                                             <TableCell className="font-medium">{item.description}</TableCell>
                                             <TableCell className="text-right">{item.quantity}</TableCell>
-                                            <TableCell className="text-right">
-                                                {formatCurrency(item.rate, selectedQuote.currency)}
-                                            </TableCell>
-                                            <TableCell className="text-right font-bold">
-                                                {formatCurrency(item.amount, selectedQuote.currency)}
-                                            </TableCell>
+                                            <TableCell className="text-right">{formatCurrency(item.rate)}</TableCell>
+                                            <TableCell className="text-right font-bold">{formatCurrency(item.amount)}</TableCell>
                                         </TableRow>
                                     ))}
                                 </TableBody>
