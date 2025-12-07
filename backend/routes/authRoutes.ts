@@ -5,6 +5,7 @@ import jwt from 'jsonwebtoken';
 import { authenticator } from 'otplib';
 import crypto from 'crypto';
 import nodemailer from 'nodemailer';
+import rateLimit from 'express-rate-limit'; // IMPORT RATE LIMITER
 import { ActivityService } from '../services/ActivityService';
 import fs from 'fs'; 
 import path from 'path'; 
@@ -13,6 +14,16 @@ import { exec } from 'child_process';
 
 const router = Router();
 const prisma = new PrismaClient();
+
+// --- SECURITY: Login Rate Limiter ---
+const loginLimiter = rateLimit({
+    windowMs: 15 * 60 * 1000, // 15 minutes window
+    limit: 5, // Limit each IP to 5 requests per window
+    message: { error: "Too many login attempts. Please try again after 15 minutes." },
+    standardHeaders: true, // Return rate limit info in the `RateLimit-*` headers
+    legacyHeaders: false, // Disable the `X-RateLimit-*` headers
+    skipSuccessfulRequests: true, // Optional: Don't count successful logins against the limit
+});
 
 // --- HELPER: Dynamic Email Sender ---
 async function sendEmail(to: string, subject: string, text: string) {
@@ -79,7 +90,8 @@ router.get('/status', async (req, res) => {
 // 1. LOGIN & AUTHENTICATION
 // ==============================
 
-router.post('/login', async (req, res) => {
+// Applied loginLimiter middleware here
+router.post('/login', loginLimiter, async (req, res) => {
   try {
     const { email, password, totpToken } = req.body;
 
@@ -174,7 +186,7 @@ router.post('/reset-password', async (req, res) => {
 });
 
 // ==============================
-// 3. SYSTEM INITIALIZATION & SETUP (FIXED)
+// 3. SYSTEM INITIALIZATION & SETUP
 // ==============================
 
 router.post('/setup', async (req: Request, res: Response) => {
@@ -231,7 +243,6 @@ PUPPETEER_EXECUTABLE_PATH="${puppeteerPath}"
     }
 
     // 5. Run Database Schema Push
-    // FIX: Explicitly use prisma@5.22.0 to avoid v7 breaking changes
     console.log(`Running database setup using schema at: ${schemaPath}`);
     
     await new Promise<void>((resolve, reject) => {

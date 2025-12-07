@@ -34,21 +34,24 @@ dotenv.config();
 const app = express();
 const PORT = process.env.PORT || 5000;
 
+// --- ARCHITECTURE FIX: TRUST PROXY ---
+// Required because we run behind Apache/Nginx. 
+// Ensures req.ip returns the real client IP, not 127.0.0.1
+app.set('trust proxy', 1); 
+// -------------------------------------
+
 // 2. Middlewares
 app.use(helmet({
-  crossOriginResourcePolicy: { policy: "cross-origin" } // Allow images to be loaded by frontend
+  crossOriginResourcePolicy: { policy: "cross-origin" } 
 })); 
 app.use(cors());   
 app.use(express.json()); 
 app.use(morgan('dev'));  
 
-// --- STATIC FILE SERVING (CRITICAL FIX) ---
-// Serve the frontend uploads directory directly via the backend.
-// This fixes the issue where Next.js Prod build doesn't see new files.
+// --- STATIC FILE SERVING ---
 const rootPath = process.cwd().endsWith('backend') ? '..' : '.';
 const uploadDir = path.join(process.cwd(), rootPath, 'frontend/public/uploads');
 app.use('/uploads', express.static(uploadDir));
-// -------------------------------------------
 
 // 3. Public Routes
 app.use('/api/auth', authRoutes);
