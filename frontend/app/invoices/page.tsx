@@ -23,7 +23,8 @@ import { Calendar } from "@/components/ui/calendar";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { cn } from "@/lib/utils";
 import { DateRange } from "react-day-picker";
-import { useToast } from "@/components/ui/toast-context"; // <--- Import Toast Hook
+import { useToast } from "@/components/ui/toast-context";
+import { AVAILABLE_CURRENCIES } from "@/lib/currencies"; // <--- 1. ADD IMPORT
 
 interface Invoice {
   id: number;
@@ -31,10 +32,8 @@ interface Invoice {
   issue_date: string;
   grand_total: string;
   status: string;
-  // --- ADDED CURRENCY FIELDS ---
   currency?: string;
   exchange_rate?: number;
-  // -----------------------------
   client: {
     company_name: string;
     email?: string;
@@ -43,7 +42,7 @@ interface Invoice {
 
 export default function InvoiceListPage() {
   const router = useRouter();
-  const { toast } = useToast(); // <--- Initialize Toast
+  const { toast } = useToast();
   const [invoices, setInvoices] = useState<Invoice[]>([]);
   const [filteredInvoices, setFilteredInvoices] = useState<Invoice[]>([]);
   const [loading, setLoading] = useState(true);
@@ -53,6 +52,16 @@ export default function InvoiceListPage() {
   const [searchTerm, setSearchTerm] = useState("");
   const [statusFilter, setStatusFilter] = useState("ALL");
   const [dateRange, setDateRange] = useState<DateRange | undefined>();
+
+  // --- 2. ADD HELPER FUNCTION ---
+  const formatMoney = (amount: number, currencyCode: string = "INR") => {
+      const selectedCurr = AVAILABLE_CURRENCIES.find(c => c.code === currencyCode);
+      return new Intl.NumberFormat(selectedCurr?.locale || 'en-IN', { 
+          style: 'currency', 
+          currency: currencyCode,
+          minimumFractionDigits: 2
+      }).format(amount);
+  };
 
   useEffect(() => {
     const fetchInvoices = async () => {
@@ -69,6 +78,8 @@ export default function InvoiceListPage() {
     };
     fetchInvoices();
   }, []);
+
+  // ... (rest of the component logic remains the same)
 
   // Filtering Logic
   useEffect(() => {
@@ -134,7 +145,6 @@ export default function InvoiceListPage() {
     }
   };
 
-  // --- MODIFIED: Direct Send (No Prompt) ---
   const handleSendEmail = async (inv: Invoice) => {
     if (!inv.client.email) {
         return toast("Client has no registered email address.", "error");
@@ -144,7 +154,6 @@ export default function InvoiceListPage() {
     try { 
         await api.post(`/mail/invoice/${inv.id}`, { email: inv.client.email }); 
         toast(`Email sent to ${inv.client.email}`, "success");
-        // Auto-mark as sent if not already paid
         if (inv.status === 'DRAFT') handleStatusChange(inv.id, 'SENT');
     } 
     catch (e) { 
@@ -157,7 +166,6 @@ export default function InvoiceListPage() {
   const handleStatusChange = async (id: number, status: string) => {
     try { 
         await api.patch(`/invoices/${id}/status`, { status }); 
-        // Optimistic Update
         setInvoices(prev => prev.map(inv => inv.id === id ? { ...inv, status } : inv));
         toast(`Status updated to ${status}`, "success");
     } 
@@ -170,7 +178,6 @@ export default function InvoiceListPage() {
       if (!confirm("Are you sure you want to delete this invoice? This action cannot be undone.")) return;
       try {
           await api.delete(`/invoices/${id}`);
-          // Optimistic Delete
           setInvoices(prev => prev.filter(inv => inv.id !== id));
           toast("Invoice deleted successfully", "success");
       } catch (e) {
@@ -193,7 +200,6 @@ export default function InvoiceListPage() {
         </Link>
       </div>
 
-      {/* Filters Bar */}
       <div className="flex flex-col md:flex-row gap-4 bg-card p-4 rounded-xl border border-border shadow-sm">
          <div className="relative flex-1">
             <Search className="absolute left-3 top-2.5 h-4 w-4 text-muted-foreground" />
@@ -220,7 +226,6 @@ export default function InvoiceListPage() {
             </SelectContent>
          </Select>
 
-         {/* Date Range Picker */}
          <div className="flex items-center gap-2">
              <Popover>
                 <PopoverTrigger asChild>
@@ -278,16 +283,15 @@ export default function InvoiceListPage() {
                     <TableCell className="text-muted-foreground font-medium">{inv.client?.company_name}</TableCell>
                     <TableCell>{format(new Date(inv.issue_date), "dd MMM yyyy")}</TableCell>
                     
-                    {/* --- CURRENCY AWARE AMOUNT COLUMN --- */}
                     <TableCell className="text-right">
                        <div className="flex flex-col items-end">
                            <span className="font-bold text-foreground">
+                               {/* Use the new helper function here */}
                                {formatMoney(Number(inv.grand_total), inv.currency || 'INR')}
                            </span>
-                           {/* Show Approximate Ledger Value if Foreign Currency */}
                            {inv.currency && inv.currency !== 'INR' && inv.exchange_rate && (
                                <span className="text-[10px] text-muted-foreground font-normal">
-                                   ≈ {formatMoney(Number(inv.grand_total) * Number(inv.exchange_rate), 'INR')}
+                                   Ammount Recieved ≈ 
                                </span>
                            )}
                        </div>
