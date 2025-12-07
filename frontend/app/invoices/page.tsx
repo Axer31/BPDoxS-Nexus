@@ -38,6 +38,10 @@ interface Invoice {
   issue_date: string;
   grand_total: string;
   status: string;
+  // --- ADDED CURRENCY FIELDS ---
+  currency?: string;
+  exchange_rate?: number;
+  // -----------------------------
   client: {
     company_name: string;
     email?: string;
@@ -107,6 +111,15 @@ export default function InvoiceListPage() {
   const handleDateRangeSelect = (range: DateRange | undefined) => {
       setDateRange(range);
       if(range) setPeriodFilter("CUSTOM"); // Clear Preset when Range is chosen
+  };
+
+  // --- Helper: Format Currency correctly ---
+  const formatMoney = (amount: number, currency: string) => {
+    return new Intl.NumberFormat('en-IN', {
+      style: 'currency',
+      currency: currency || 'INR',
+      minimumFractionDigits: 2,
+    }).format(amount);
   };
 
   // --- 4. FILTERING LOGIC ---
@@ -365,7 +378,7 @@ export default function InvoiceListPage() {
                   <TableHead>Invoice #</TableHead>
                   <TableHead>Client</TableHead>
                   <TableHead>Date</TableHead>
-                  <TableHead>Amount</TableHead>
+                  <TableHead className="text-right">Amount</TableHead>
                   <TableHead>Status</TableHead>
                   <TableHead className="text-right">Actions</TableHead>
                 </TableRow>
@@ -380,9 +393,22 @@ export default function InvoiceListPage() {
                     <TableCell className="font-bold text-foreground font-mono">{inv.invoice_number}</TableCell>
                     <TableCell className="text-muted-foreground font-medium">{inv.client?.company_name}</TableCell>
                     <TableCell>{format(new Date(inv.issue_date), "dd MMM yyyy")}</TableCell>
-                    <TableCell className="font-bold text-foreground">
-                        {new Intl.NumberFormat('en-IN', { style: 'currency', currency: 'INR' }).format(Number(inv.grand_total))}
+                    
+                    {/* --- CURRENCY AWARE AMOUNT COLUMN --- */}
+                    <TableCell className="text-right">
+                       <div className="flex flex-col items-end">
+                           <span className="font-bold text-foreground">
+                               {formatMoney(Number(inv.grand_total), inv.currency || 'INR')}
+                           </span>
+                           {/* Show Approximate Ledger Value if Foreign Currency */}
+                           {inv.currency && inv.currency !== 'INR' && inv.exchange_rate && (
+                               <span className="text-[10px] text-muted-foreground font-normal">
+                                   ≈ {formatMoney(Number(inv.grand_total) * Number(inv.exchange_rate), 'INR')}
+                               </span>
+                           )}
+                       </div>
                     </TableCell>
+                    
                     <TableCell>
                       <span className={`px-2.5 py-1 rounded-full text-xs font-bold uppercase tracking-wide border
                         ${inv.status === 'PAID' ? 'bg-green-100 text-green-700 border-green-200 dark:bg-green-900/30 dark:text-green-400 dark:border-green-800' : ''}
@@ -396,14 +422,14 @@ export default function InvoiceListPage() {
                     </TableCell>
                     
                     <TableCell className="text-right">
-                       <div className="flex justify-end items-center gap-2">
-                           <Button variant="ghost" size="icon" className="h-8 w-8 hover:text-primary rounded-full" onClick={() => handleViewPdf(inv.id)}>
+                        <div className="flex justify-end items-center gap-2">
+                            <Button variant="ghost" size="icon" className="h-8 w-8 hover:text-primary rounded-full" onClick={() => handleViewPdf(inv.id)}>
                              {actionLoadingId === inv.id ? <Loader2 className="w-4 h-4 animate-spin"/> : <Eye className="w-4 h-4" />}
-                           </Button>
-                           <Link href={`/invoices/${inv.id}`}>
+                            </Button>
+                            <Link href={`/invoices/${inv.id}`}>
                              <Button variant="ghost" size="icon" className="h-8 w-8 rounded-full"><Pencil className="w-4 h-4" /></Button>
-                           </Link>
-                           <DropdownMenu>
+                            </Link>
+                            <DropdownMenu>
                               <DropdownMenuTrigger asChild><Button variant="ghost" size="icon" className="h-8 w-8 rounded-full"><MoreHorizontal className="w-4 h-4" /></Button></DropdownMenuTrigger>
                               <DropdownMenuContent align="end">
                                 <DropdownMenuItem onClick={() => handleDownloadPdf(inv.id, inv.invoice_number)}>Download PDF</DropdownMenuItem>
@@ -413,8 +439,8 @@ export default function InvoiceListPage() {
                                 <DropdownMenuItem onClick={() => handleStatusChange(inv.id, 'DRAFT')}>Mark Draft</DropdownMenuItem>
                                 <DropdownMenuItem className="text-red-600 focus:text-red-600 focus:bg-red-50 dark:focus:bg-red-900/10" onClick={() => handleDelete(inv.id)}> Delete </DropdownMenuItem>
                               </DropdownMenuContent>
-                           </DropdownMenu>
-                       </div>
+                            </DropdownMenu>
+                        </div>
                     </TableCell>
                   </TableRow>
                 ))}
