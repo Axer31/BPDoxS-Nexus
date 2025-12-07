@@ -428,7 +428,8 @@ export const generateInvoiceHTML = (invoice: any, ownerProfile: any): string => 
             <div class="company-meta-line">Email: ${profile.email || ''} | Phone: ${profile.phone || ''}</div>
             <div class="company-meta-line">
             ${profile.gstin ? `GSTIN: ${profile.gstin}` : ''} 
-            ${profile.gstin && profile.cin ? ' | ' : ''} 
+            </div>
+            <div class="company-meta-line">
             ${profile.cin ? `CIN: ${profile.cin}` : ''}
             </div>
             <div class="company-address-line" style="white-space: pre-line;">${profile.address || ''}</div>

@@ -111,6 +111,47 @@ router.patch('/:id/status', async (req: Request, res: Response) => {
   }
 });
 
+// MARK AS PAID (Payment Route)
+router.post('/:id/payment', async (req: Request, res: Response) => {
+  try {
+    const id = Number(req.params.id);
+    const { amount_received, received_amount_inr, payment_date, notes } = req.body;
+
+    // 1. Update Invoice
+    const updated = await prisma.invoice.update({
+        where: { id },
+        data: { 
+          status: 'PAID',
+          payment_date: new Date(payment_date),
+          received_amount: received_amount_inr ? Number(received_amount_inr) : null // Store the Manual INR value
+        }
+    });
+
+    // 2. Log Activity
+    const authReq = req as AuthRequest;
+    if (authReq.user) {
+        const ip = req.headers['x-forwarded-for'] || req.socket.remoteAddress;
+        const msg = received_amount_inr 
+            ? `Invoice #${updated.invoice_number} Paid. (INR ${received_amount_inr})`
+            : `Invoice #${updated.invoice_number} Paid.`;
+            
+        await ActivityService.log(
+            authReq.user.id, 
+            "PAYMENT_RECEIVED", 
+            msg, 
+            "INVOICE", 
+            updated.id.toString(), 
+            ip as string
+        );
+    }
+
+    res.json(updated);
+  } catch (e) {
+    console.error("Payment Record Failed:", e);
+    res.status(500).json({ error: "Failed to record payment" });
+  }
+})
+
 // Get Single Invoice
 router.get('/:id', async (req, res) => {
   try {

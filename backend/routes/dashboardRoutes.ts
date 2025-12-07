@@ -26,10 +26,11 @@ router.get('/stats', async (req: Request, res: Response) => {
 
     const response: any = { summary: {}, charts: {}, tables: {} };
 
+    // ==================================================================================
     // 1. SUMMARY & TOP UNPAID (Global Stats)
+    // ==================================================================================
     if (shouldFetch('summary')) {
-        // FETCH REVENUE (PAID) - WITH CURRENCY CONVERSION
-        // We use findMany instead of aggregate to apply the exchange rate logic row-by-row
+        // FETCH REVENUE (PAID) - WITH MANUAL INR SUPPORT
         const paidInvoices = await prisma.invoice.findMany({
             where: {
                 status: { in: ['PAID', 'Paid'] },
@@ -37,32 +38,26 @@ router.get('/stats', async (req: Request, res: Response) => {
             },
             select: { 
                 grand_total: true, 
-                exchange_rate: true 
+                received_amount: true // <--- Fetch Manual Amount
             }
         });
 
-        // FETCH PENDING (SENT/OVERDUE) - WITH CURRENCY CONVERSION
-        const pendingInvoices = await prisma.invoice.findMany({
+        // FETCH PENDING (SENT/OVERDUE) - Just Sum Grand Total
+        const pendingInvoices = await prisma.invoice.aggregate({
+            _sum: { grand_total: true },
             where: {
                 status: { in: ['SENT', 'Sent', 'OVERDUE', 'Overdue', 'PARTIAL', 'Partial'] },
                 issue_date: { gte: fromDate, lte: toDate }
-            },
-            select: { 
-                grand_total: true, 
-                exchange_rate: true 
             }
         });
 
-        // Normalize totals to Base Currency (INR)
+        // LOGIC: Use 'received_amount' if exists (Manual INR), else fallback to 'grand_total'
         const totalRevenue = paidInvoices.reduce((sum, inv) => {
-            const rate = Number(inv.exchange_rate) || 1;
-            return sum + (Number(inv.grand_total) * rate);
+            const actual = inv.received_amount ? Number(inv.received_amount) : Number(inv.grand_total);
+            return sum + actual;
         }, 0);
 
-        const totalPending = pendingInvoices.reduce((sum, inv) => {
-            const rate = Number(inv.exchange_rate) || 1;
-            return sum + (Number(inv.grand_total) * rate);
-        }, 0);
+        const totalPending = Number(pendingInvoices._sum.grand_total || 0);
 
         const expenseAgg = await prisma.expense.aggregate({
             _sum: { amount: true },
@@ -88,7 +83,9 @@ router.get('/stats', async (req: Request, res: Response) => {
         });
     }
 
-    // 2. MONTHLY STATS (Used by: Monthly Perf, Net Balance, Recent Balances)
+    // ==================================================================================
+    // 2. MONTHLY STATS (Charts)
+    // ==================================================================================
     if (shouldFetch('monthlyStats')) {
         const paidInvoices = await prisma.invoice.findMany({
             where: {
@@ -98,7 +95,7 @@ router.get('/stats', async (req: Request, res: Response) => {
             select: { 
                 payment_date: true, 
                 grand_total: true,
-                exchange_rate: true // Fetch Rate
+                received_amount: true // <--- Fetch Manual Amount
             }
         });
 
@@ -114,11 +111,10 @@ router.get('/stats', async (req: Request, res: Response) => {
             const month = format(d, 'MMM yyyy');
             const existing = statsMap.get(month) || { revenue: 0, expense: 0, count: 0 };
             
-            // CONVERT TO INR
-            const rate = Number(inv.exchange_rate) || 1;
-            const amountInR = Number(inv.grand_total) * rate;
+            // LOGIC: Use 'received_amount' if exists, else 'grand_total'
+            const amount = inv.received_amount ? Number(inv.received_amount) : Number(inv.grand_total);
 
-            existing.revenue += amountInR;
+            existing.revenue += amount;
             existing.count += 1;
             statsMap.set(month, existing);
         });
@@ -148,7 +144,9 @@ router.get('/stats', async (req: Request, res: Response) => {
             .sort((a, b) => a.sortDate.getTime() - b.sortDate.getTime());
     }
 
+    // ==================================================================================
     // 3. YEARLY COMPARISON
+    // ==================================================================================
     if (shouldFetch('yearlyComparison')) {
         const currentYr = new Date().getFullYear();
         const requestedStartYears = years 
@@ -172,7 +170,7 @@ router.get('/stats', async (req: Request, res: Response) => {
                 select: { 
                     payment_date: true, 
                     grand_total: true,
-                    exchange_rate: true // Fetch Rate
+                    received_amount: true // <--- Fetch Manual Amount
                 }
             });
 
@@ -186,11 +184,9 @@ router.get('/stats', async (req: Request, res: Response) => {
                 if (!inv.payment_date) return;
                 const fyStr = getFinancialYear(inv.payment_date);
                 if (fyMap.has(fyStr)) {
-                    // CONVERT TO INR
-                    const rate = Number(inv.exchange_rate) || 1;
-                    const amountInR = Number(inv.grand_total) * rate;
-
-                    fyMap.set(fyStr, (fyMap.get(fyStr) || 0) + amountInR);
+                    // LOGIC: Use 'received_amount' if exists, else 'grand_total'
+                    const amount = inv.received_amount ? Number(inv.received_amount) : Number(inv.grand_total);
+                    fyMap.set(fyStr, (fyMap.get(fyStr) || 0) + amount);
                 }
             });
 
@@ -201,7 +197,9 @@ router.get('/stats', async (req: Request, res: Response) => {
         response.charts.yearlyComparison = yearlyComparison;
     }
 
+    // ==================================================================================
     // 4. EXPENSE TABLE
+    // ==================================================================================
     if (shouldFetch('expenseTable')) {
         const expenseRaw = await prisma.expense.findMany({
             where: { date: { gte: fromDate, lte: toDate } },

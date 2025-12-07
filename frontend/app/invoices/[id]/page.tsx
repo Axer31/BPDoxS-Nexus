@@ -35,10 +35,8 @@ export default function EditInvoicePage() {
   const [selectedClientId, setSelectedClientId] = useState<string>("");
   const [selectedBankId, setSelectedBankId] = useState<string>("");
   
-  // NEW: Currency & Exchange Rate State
+  // NEW: Currency State (Exchange Rate Removed)
   const [currency, setCurrency] = useState("INR");
-  const [exchangeRate, setExchangeRate] = useState<number>(1);
-
   const [items, setItems] = useState<any[]>([]);
   const [subtotal, setSubtotal] = useState(0);
   const [grandTotal, setGrandTotal] = useState(0);
@@ -65,11 +63,9 @@ export default function EditInvoicePage() {
             setRemarks(inv.remarks || "");
             setSelectedClientId(inv.client_id.toString());
             
-            // Set Bank, Currency & Exchange Rate
+            // Set Bank & Currency
             setSelectedBankId(inv.bank_account_id?.toString() || "");
             setCurrency(inv.currency || "INR");
-            // Load existing rate or default to 1
-            setExchangeRate(inv.exchange_rate ? Number(inv.exchange_rate) : 1);
 
             setItems(inv.line_items);
             setTaxData(inv.tax_summary);
@@ -94,10 +90,6 @@ export default function EditInvoicePage() {
     const bank = banks.find(b => b.id.toString() === bankId);
     if (bank) {
         setCurrency(bank.currency);
-        // Reset exchange rate to 1 if we switch back to Base Currency (INR)
-        if (bank.currency === 'INR') {
-            setExchangeRate(1);
-        }
     }
   };
 
@@ -137,8 +129,6 @@ export default function EditInvoicePage() {
 
   // --- 5. Update Handler ---
   const handleUpdate = async () => {
-    if (currency !== 'INR' && exchangeRate <= 0) return alert("Please enter a valid Exchange Rate");
-    
     setIsSaving(true);
     try {
         await api.put(`/invoices/${id}`, {
@@ -151,8 +141,7 @@ export default function EditInvoicePage() {
             subtotal,
             grandTotal,
             remarks,
-            currency, // Send updated currency
-            exchange_rate: exchangeRate // Send updated rate
+            currency
         });
         alert("Invoice Updated Successfully");
         router.push('/invoices');
@@ -213,30 +202,6 @@ export default function EditInvoicePage() {
                         {banks.map(b => <option key={b.id} value={b.id}>{b.bank_name} - {b.currency}</option>)}
                     </select>
                 </div>
-
-                {/* NEW: Exchange Rate Input (Conditional) */}
-                {currency !== 'INR' && (
-                    <div className="space-y-2 p-3 bg-yellow-50 dark:bg-yellow-950/20 border border-yellow-200 dark:border-yellow-900/50 rounded-md">
-                        <div className="flex justify-between items-center">
-                            <Label className="text-yellow-800 dark:text-yellow-500">Exchange Rate</Label>
-                            <span className="text-xs text-yellow-700 dark:text-yellow-400 font-mono">1 {currency} = ? INR</span>
-                        </div>
-                        <div className="relative">
-                            <Input 
-                                type="number" 
-                                step="0.01"
-                                value={exchangeRate}
-                                onChange={(e) => setExchangeRate(parseFloat(e.target.value))}
-                                className="bg-white dark:bg-black border-yellow-200"
-                            />
-                            <RefreshCw className="w-3 h-3 absolute right-3 top-3.5 text-slate-400" />
-                        </div>
-                        <p className="text-[10px] text-yellow-700 dark:text-yellow-500/80 leading-tight">
-                            Update the conversion rate for accurate Ledger reporting in INR.
-                        </p>
-                    </div>
-                )}
-
                 <div className="space-y-2 flex flex-col">
                     <Label>Issue Date</Label>
                     <Popover>
@@ -297,11 +262,6 @@ export default function EditInvoicePage() {
                                 {new Intl.NumberFormat('en-IN', { style: 'currency', currency: currency }).format(grandTotal)}
                             </span>
                         </div>
-                        {currency !== 'INR' && (
-                             <div className="text-xs text-right text-muted-foreground">
-                                (≈ {new Intl.NumberFormat('en-IN', { style: 'currency', currency: 'INR' }).format(grandTotal * exchangeRate)})
-                             </div>
-                        )}
                     </div>
                 </div>
             </CardContent>

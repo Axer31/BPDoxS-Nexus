@@ -145,7 +145,7 @@ model Invoice {
   due_date        DateTime?
   payment_date    DateTime?
   currency        String   @default("INR")
-  exchange_rate   Decimal  @default(1.0000) @db.Decimal(10, 4)
+  received_amount Decimal? @db.Decimal(15, 2)
   
   // JSON Data Blobs for Flexibility
   line_items      Json     // Array of items { desc, qty, rate, hsn }
@@ -188,7 +188,6 @@ model Quotation {
   subtotal          Decimal  @db.Decimal(15, 2)
   grand_total       Decimal  @db.Decimal(15, 2)
   currency          String   @default("INR")
-  exchange_rate   Decimal  @default(1.0000) @db.Decimal(10, 4)
 
   created_at        DateTime @default(now())
   updated_at        DateTime @updatedAt

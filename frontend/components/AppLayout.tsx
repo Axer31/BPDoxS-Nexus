@@ -8,11 +8,16 @@ import { Configurator } from "@/components/Configurator";
 import { Loader2, ServerCrash } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import axios from "axios";
+// 1. IMPORT REACT QUERY
+import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 
 export function AppLayout({ children }: { children: React.ReactNode }) {
   const pathname = usePathname();
   const router = useRouter();
   
+  // 2. CREATE QUERY CLIENT (Stable across re-renders)
+  const [queryClient] = useState(() => new QueryClient());
+
   // States: 'loading', 'ready', 'error'
   const [appState, setAppState] = useState<'loading' | 'ready' | 'error'>('loading');
 
@@ -24,31 +29,25 @@ export function AppLayout({ children }: { children: React.ReactNode }) {
   useEffect(() => {
     const initCheck = async () => {
         try {
-            // 1. Force a status check directly (bypassing global interceptors)
             const res = await axios.get('/api/auth/status', { validateStatus: () => true });
             
-            // If API is not 200 OK, treat as critical error (Backend down/misconfigured)
             if (res.status !== 200) {
                 throw new Error(`Backend returned status ${res.status}`);
             }
 
             const isInstalled = res.data.initialized;
 
-            // 2. Routing Logic
             if (!isInstalled) {
-                // SYSTEM NOT INSTALLED
                 if (pathname !== '/setup') {
                     router.replace('/setup');
-                    return; // Keep loading while redirect happens
+                    return; 
                 }
             } else {
-                // SYSTEM INSTALLED
                 if (pathname === '/setup') {
                     router.replace('/login');
                     return; 
                 }
 
-                // Check Token for Protected Routes
                 const token = localStorage.getItem('token');
                 if (!token && !isAuthPage) {
                     router.replace('/login');
@@ -56,7 +55,6 @@ export function AppLayout({ children }: { children: React.ReactNode }) {
                 }
             }
 
-            // If we got here, we are on the correct page
             setAppState('ready');
 
         } catch (e) {
@@ -68,9 +66,16 @@ export function AppLayout({ children }: { children: React.ReactNode }) {
     initCheck();
   }, [pathname, isAuthPage, router]);
 
+  // 3. WRAP CONTENT HELPER
+  const wrapWithProvider = (content: React.ReactNode) => (
+    <QueryClientProvider client={queryClient}>
+        {content}
+    </QueryClientProvider>
+  );
+
   // --- 1. LOADING SCREEN ---
   if (appState === 'loading') {
-      return (
+      return wrapWithProvider(
         <div className="h-screen w-full flex flex-col items-center justify-center bg-background gap-4">
             <Loader2 className="h-12 w-12 animate-spin text-primary" />
             <p className="text-muted-foreground animate-pulse">Connecting to InvoiceCore...</p>
@@ -78,9 +83,9 @@ export function AppLayout({ children }: { children: React.ReactNode }) {
       );
   }
 
-  // --- 2. ERROR SCREEN (Prevents Login Loop) ---
+  // --- 2. ERROR SCREEN ---
   if (appState === 'error') {
-      return (
+      return wrapWithProvider(
         <div className="h-screen w-full flex flex-col items-center justify-center bg-background gap-4 p-4 text-center">
             <div className="bg-red-100 dark:bg-red-900/20 p-4 rounded-full">
                 <ServerCrash className="h-10 w-10 text-red-600" />
@@ -98,7 +103,7 @@ export function AppLayout({ children }: { children: React.ReactNode }) {
 
   // --- 3. AUTH/SETUP LAYOUT ---
   if (isAuthPage) {
-    return (
+    return wrapWithProvider(
         <div className="flex-1 flex flex-col h-screen w-full overflow-hidden relative z-10">
             <main className="flex-1 overflow-y-auto scroll-smooth">
                 {children}
@@ -108,7 +113,7 @@ export function AppLayout({ children }: { children: React.ReactNode }) {
   }
 
   // --- 4. DASHBOARD LAYOUT ---
-  return (
+  return wrapWithProvider(
     <>
       <Sidebar className="hidden md:flex" />
       <div className="flex-1 flex flex-col h-screen overflow-hidden relative z-10">

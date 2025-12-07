@@ -13,8 +13,7 @@ import {
   DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger 
 } from "@/components/ui/dropdown-menu";
 import { 
-  Plus, MoreHorizontal, CheckCircle, Send, 
-  Loader2, Eye, Pencil, Search, Filter, Calendar as CalendarIcon, X, Share2, Trash2
+  Plus, MoreHorizontal, Loader2, Eye, Pencil, Search, Calendar as CalendarIcon, X
 } from "lucide-react";
 import Link from "next/link";
 import { 
@@ -25,12 +24,12 @@ import { useRouter } from 'next/navigation';
 import { Calendar } from "@/components/ui/calendar";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { 
-  Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter 
+  Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription
 } from "@/components/ui/dialog";
-import { Label } from "@/components/ui/label";
 import { cn } from "@/lib/utils";
 import { DateRange } from "react-day-picker";
 import { useToast } from "@/components/ui/toast-context";
+import MarkAsPaidDialog from '@/components/invoices/MarkAsPaidDialog';
 
 interface Invoice {
   id: number;
@@ -65,24 +64,23 @@ export default function InvoiceListPage() {
   const [dateRange, setDateRange] = useState<DateRange | undefined>();
 
   // --- PAYMENT DIALOG STATE ---
-  const [isPayDialogOpen, setIsPayDialogOpen] = useState(false);
-  const [payDate, setPayDate] = useState<Date | undefined>(new Date());
-  const [invoiceToPay, setInvoiceToPay] = useState<number | null>(null);
+  const [selectedInvoiceForPayment, setSelectedInvoiceForPayment] = useState<Invoice | null>(null);
 
   // --- 1. LOAD DATA ---
+  const fetchInvoices = async () => {
+    try {
+      const res = await api.get('/invoices');
+      setInvoices(res.data);
+      // Note: setFilteredInvoices is handled by the useEffect below
+    } catch (err) {
+      console.error("Failed to load invoices", err);
+      toast("Failed to load invoices", "error");
+    } finally {
+      setLoading(false);
+    }
+  };
+
   useEffect(() => {
-    const fetchInvoices = async () => {
-      try {
-        const res = await api.get('/invoices');
-        setInvoices(res.data);
-        setFilteredInvoices(res.data);
-      } catch (err) {
-        console.error("Failed to load invoices", err);
-        toast("Failed to load invoices", "error");
-      } finally {
-        setLoading(false);
-      }
-    };
     fetchInvoices();
   }, []);
 
@@ -233,28 +231,11 @@ export default function InvoiceListPage() {
     }
   };
 
-  const openPayDialog = (id: number) => {
-      setInvoiceToPay(id);
-      setPayDate(new Date()); 
-      setIsPayDialogOpen(true);
-  };
-
-  const handleConfirmPaid = async () => {
-      if (!invoiceToPay) return;
-      try {
-          await api.patch(`/invoices/${invoiceToPay}/status`, { 
-              status: 'PAID',
-              paymentDate: payDate 
-          });
-          
-          setInvoices(prev => prev.map(inv => inv.id === invoiceToPay ? { ...inv, status: 'PAID' } : inv));
-          toast("Invoice marked as Paid", "success");
-      } catch (e) {
-          toast("Failed to update status", "error");
-      } finally {
-          setIsPayDialogOpen(false);
-          setInvoiceToPay(null);
-      }
+  // --- NEW: Handle Success from Child Component ---
+  const handlePaymentSuccess = () => {
+    toast("Payment recorded successfully", "success");
+    setSelectedInvoiceForPayment(null); // Close Dialog
+    fetchInvoices(); // Refresh List to show 'PAID' status
   };
 
   const handleDelete = async (id: number) => {
@@ -434,7 +415,10 @@ export default function InvoiceListPage() {
                               <DropdownMenuContent align="end">
                                 <DropdownMenuItem onClick={() => handleDownloadPdf(inv.id, inv.invoice_number)}>Download PDF</DropdownMenuItem>
                                 <DropdownMenuItem onClick={() => handleSendEmail(inv)}>Send Email</DropdownMenuItem>
-                                <DropdownMenuItem onClick={() => openPayDialog(inv.id)}>Mark Paid</DropdownMenuItem>
+                                
+                                {/* TRIGGER THE NEW PAYMENT DIALOG */}
+                                <DropdownMenuItem onClick={() => setSelectedInvoiceForPayment(inv)}> Mark Paid </DropdownMenuItem>
+                                
                                 <DropdownMenuItem onClick={() => handleStatusChange(inv.id, 'SHARED')}>Mark Shared</DropdownMenuItem>
                                 <DropdownMenuItem onClick={() => handleStatusChange(inv.id, 'DRAFT')}>Mark Draft</DropdownMenuItem>
                                 <DropdownMenuItem className="text-red-600 focus:text-red-600 focus:bg-red-50 dark:focus:bg-red-900/10" onClick={() => handleDelete(inv.id)}> Delete </DropdownMenuItem>
@@ -450,32 +434,27 @@ export default function InvoiceListPage() {
         </CardContent>
       </Card>
 
-      {/* MARK AS PAID DIALOG */}
-      <Dialog open={isPayDialogOpen} onOpenChange={setIsPayDialogOpen}>
+      {/* --- PAYMENT DIALOG --- */}
+      <Dialog open={!!selectedInvoiceForPayment} onOpenChange={(open) => !open && setSelectedInvoiceForPayment(null)}>
         <DialogContent className="sm:max-w-[425px]">
           <DialogHeader>
-            <DialogTitle>Mark Invoice as Paid</DialogTitle>
+            <DialogTitle>Record Payment</DialogTitle>
             <DialogDescription>
-              Select the date the payment was received.
+              {selectedInvoiceForPayment?.currency !== 'INR' 
+                ? "Enter the received amount. For international payments, please specify the exact INR credited."
+                : "Enter the payment details below."}
             </DialogDescription>
           </DialogHeader>
-          <div className="grid gap-4 py-4">
-            <div className="flex flex-col space-y-2">
-                <Label>Payment Date</Label>
-                <div className="border rounded-md p-2 flex justify-center">
-                    <Calendar
-                        mode="single"
-                        selected={payDate}
-                        onSelect={setPayDate}
-                        initialFocus
-                    />
-                </div>
-            </div>
-          </div>
-          <DialogFooter>
-            <Button variant="outline" onClick={() => setIsPayDialogOpen(false)}>Cancel</Button>
-            <Button onClick={handleConfirmPaid}>Confirm Payment</Button>
-          </DialogFooter>
+          
+          {selectedInvoiceForPayment && (
+            <MarkAsPaidDialog 
+                invoiceId={selectedInvoiceForPayment.id}
+                outstandingBalance={Number(selectedInvoiceForPayment.grand_total)}
+                currencySymbol={selectedInvoiceForPayment.currency || 'INR'}
+                onSuccess={handlePaymentSuccess}
+            />
+          )}
+
         </DialogContent>
       </Dialog>
 

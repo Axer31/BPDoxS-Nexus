@@ -9,7 +9,7 @@ import { Textarea } from "@/components/ui/textarea";
 import { Calendar } from "@/components/ui/calendar";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { format } from "date-fns";
-import { CalendarIcon, Save, Loader2, PlusCircle, AlertCircle, RefreshCw } from "lucide-react";
+import { CalendarIcon, Save, Loader2, PlusCircle, AlertCircle } from "lucide-react";
 import { InvoiceItemsTable, LineItem } from "./invoice-items";
 import api from "@/lib/api"; 
 import Link from "next/link";
@@ -17,7 +17,6 @@ import { useRouter } from 'next/navigation';
 import { Switch } from "@/components/ui/switch";
 
 // --- Currency Helpers ---
-// This ensures we always show the correct symbol (e.g., CA$ vs $)
 const getCurrencyLocale = (code: string) => {
     const map: Record<string, string> = {
         'USD': 'en-US',
@@ -46,9 +45,8 @@ export default function NewInvoicePage() {
   const [selectedClientId, setSelectedClientId] = useState<string>("");
   const [selectedBankId, setSelectedBankId] = useState<string>("");
   
-  // Multi-Currency State
+  // Multi-Currency State (Exchange Rate Removed)
   const [currency, setCurrency] = useState("INR");
-  const [exchangeRate, setExchangeRate] = useState<number>(1);
 
   const [isCalculating, setIsCalculating] = useState(false);
   const [isSaving, setIsSaving] = useState(false);
@@ -78,7 +76,6 @@ export default function NewInvoicePage() {
             if (defaultBank) {
                 setSelectedBankId(defaultBank.id);
                 setCurrency(defaultBank.currency);
-                setExchangeRate(1); // Default to 1, user can edit if foreign
             }
         } catch (e) {
             console.error(e);
@@ -95,10 +92,6 @@ export default function NewInvoicePage() {
     const bank = banks.find(b => b.id.toString() === bankId);
     if (bank) {
         setCurrency(bank.currency);
-        // Reset exchange rate to 1 if we switch back to Base Currency (INR)
-        if (bank.currency === 'INR') {
-            setExchangeRate(1);
-        }
     }
   };
 
@@ -149,7 +142,6 @@ export default function NewInvoicePage() {
     if (!selectedClientId) return alert("Select a client");
     if (!selectedBankId) return alert("Select a bank account for payment details");
     if (items.length === 0 || subtotal === 0) return alert("Add items");
-    if (currency !== 'INR' && exchangeRate <= 0) return alert("Please enter a valid Exchange Rate");
 
     try {
       setIsSaving(true);
@@ -165,13 +157,11 @@ export default function NewInvoicePage() {
         isManual: isManual,
         manualNumber: isManual ? manualNumber : undefined,
         remarks: remarks,
-        currency, // Actual Invoice Currency (e.g. USD)
-        exchange_rate: exchangeRate // Conversion rate to Base (INR)
+        currency // Actual Invoice Currency
       };
 
       const response = await api.post('/invoices', payload);
       
-      // router.push is async, but we can alert first
       alert(`Success! Invoice ${response.data.invoice_number} Created`);
       router.push('/invoices');
 
@@ -250,29 +240,6 @@ export default function NewInvoicePage() {
                 </p>
             </div>
 
-            {/* Exchange Rate Input - Only for Foreign Currencies */}
-            {currency !== 'INR' && (
-                <div className="space-y-2 p-3 bg-yellow-50 dark:bg-yellow-950/20 border border-yellow-200 dark:border-yellow-900/50 rounded-md">
-                    <div className="flex justify-between items-center">
-                        <Label className="text-yellow-800 dark:text-yellow-500">Exchange Rate</Label>
-                        <span className="text-xs text-yellow-700 dark:text-yellow-400 font-mono">1 {currency} = ? INR</span>
-                    </div>
-                    <div className="relative">
-                        <Input 
-                            type="number" 
-                            step="0.01"
-                            value={exchangeRate}
-                            onChange={(e) => setExchangeRate(parseFloat(e.target.value))}
-                            className="bg-white dark:bg-black border-yellow-200"
-                        />
-                        <RefreshCw className="w-3 h-3 absolute right-3 top-3.5 text-slate-400" />
-                    </div>
-                    <p className="text-[10px] text-yellow-700 dark:text-yellow-500/80 leading-tight">
-                        Required for accurate Ledger reports in INR. The client will still see {currency}.
-                    </p>
-                </div>
-            )}
-
             {/* Dates */}
             <div className="grid grid-cols-2 gap-3">
                 <div className="space-y-2 flex flex-col">
@@ -334,7 +301,6 @@ export default function NewInvoicePage() {
             </div>
 
             {/* Items Table */}
-            {/* We pass currency here so the rows show $ or ₹ */}
             <InvoiceItemsTable items={items} setItems={setItems} currency={currency} />
 
             {/* Remarks */}
@@ -386,12 +352,6 @@ export default function NewInvoicePage() {
                             <span className="block font-bold text-xl text-primary">
                                 {formatMoney(grandTotal)}
                             </span>
-                            {/* Ledger Preview Hint */}
-                            {currency !== 'INR' && (
-                                <span className="text-[10px] text-muted-foreground block">
-                                    (≈ ₹{(grandTotal * exchangeRate).toFixed(2)} INR)
-                                </span>
-                            )}
                         </div>
                     </div>
                 </div>

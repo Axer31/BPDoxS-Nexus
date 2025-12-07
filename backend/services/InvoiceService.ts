@@ -15,8 +15,7 @@ interface CreateInvoiceDTO {
   manualNumber?: string;
   remarks?: string;
   bankAccountId?: number;
-  currency?: string;      // Currency Code (e.g., USD)
-  exchange_rate?: number; // Conversion Rate (e.g., 84.50)
+  currency?: string; 
 }
 
 export class InvoiceService {
@@ -148,8 +147,6 @@ export class InvoiceService {
           remarks: data.remarks,
           bank_account_id: data.bankAccountId,
           currency: data.currency || 'INR',
-          // --- ADDED EXCHANGE RATE SUPPORT ---
-          exchange_rate: data.exchange_rate ? Number(data.exchange_rate) : 1
         }
       });
     });
@@ -183,8 +180,6 @@ export class InvoiceService {
                 grand_total: data.grandTotal,
                 remarks: data.remarks,
                 currency: data.currency,
-                // --- ADDED EXCHANGE RATE SUPPORT ---
-                exchange_rate: data.exchange_rate ? Number(data.exchange_rate) : 1
                 
                 // Note: We do NOT allow updating invoice_number to preserve audit trail
             }

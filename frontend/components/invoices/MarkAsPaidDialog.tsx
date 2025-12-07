@@ -1,4 +1,3 @@
-// components/invoices/MarkAsPaidDialog.tsx
 'use client';
 
 import { useState } from 'react';
@@ -8,43 +7,48 @@ import { format } from 'date-fns';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Calendar } from '@/components/ui/calendar';
-import {
-  Popover,
-  PopoverContent,
-  PopoverTrigger,
-} from '@/components/ui/popover';
+import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
-import axios from 'axios';
+import api from '@/lib/api'; 
 
 interface MarkAsPaidProps {
   invoiceId: number;
   outstandingBalance: number;
   currencySymbol: string;
+  onSuccess?: () => void;
 }
 
-export default function MarkAsPaidDialog({ invoiceId, outstandingBalance, currencySymbol }: MarkAsPaidProps) {
+export default function MarkAsPaidDialog({ 
+  invoiceId, 
+  outstandingBalance, 
+  currencySymbol,
+  onSuccess 
+}: MarkAsPaidProps) {
   const [date, setDate] = useState<Date | undefined>(new Date());
   const { register, handleSubmit, formState: { errors } } = useForm();
   const queryClient = useQueryClient();
 
-  // Mutation to call backend
+  // Show manual INR field if currency is NOT INR
+  const isInternational = currencySymbol !== '₹' && currencySymbol !== 'INR';
+
   const mutation = useMutation({
     mutationFn: async (data: any) => {
-      return axios.post(`/api/invoices/${invoiceId}/payment`, data);
+      return api.post(`/invoices/${invoiceId}/payment`, data);
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['invoices'] });
-      // Close modal logic here
+      if (onSuccess) onSuccess();
     },
   });
 
   const onSubmit = (data: any) => {
     if (!date) return;
     
-    // Payload matches the user requirement: Date + Amount
     const payload = {
       amount_received: parseFloat(data.amount),
-      payment_date: date.toISOString(), // ISO format for Prisma
+      // SEND THE MANUAL AMOUNT
+      received_amount_inr: data.received_amount_inr ? parseFloat(data.received_amount_inr) : null,
+      payment_date: date.toISOString(),
       notes: data.notes
     };
     
@@ -52,12 +56,10 @@ export default function MarkAsPaidDialog({ invoiceId, outstandingBalance, curren
   };
 
   return (
-    <div className="p-4 bg-white rounded-lg shadow-sm border mt-4">
-      <h3 className="text-sm font-semibold mb-3">Record Payment</h3>
-      
+    <div className="space-y-4">
       <form onSubmit={handleSubmit(onSubmit)} className="space-y-4">
         
-        {/* Date Selection - "Below the Calendar" style logic */}
+        {/* Date Selection */}
         <div className="flex flex-col gap-2">
           <label className="text-xs font-medium text-gray-500">Payment Date</label>
           <Popover>
@@ -71,37 +73,45 @@ export default function MarkAsPaidDialog({ invoiceId, outstandingBalance, curren
               </Button>
             </PopoverTrigger>
             <PopoverContent className="w-auto p-0" align="start">
-              <Calendar
-                mode="single"
-                selected={date}
-                onSelect={setDate}
-                initialFocus
-              />
+              <Calendar mode="single" selected={date} onSelect={setDate} initialFocus />
             </PopoverContent>
           </Popover>
         </div>
 
-        {/* Amount Received Input */}
+        {/* Invoice Amount (Display Only or Confirmation) */}
         <div className="flex flex-col gap-2">
           <label className="text-xs font-medium text-gray-500">
-            Amount Received ({currencySymbol})
+            Invoice Amount ({currencySymbol})
           </label>
           <Input 
             type="number" 
             step="0.01"
-            placeholder="0.00"
-            defaultValue={outstandingBalance} // Auto-fill with balance for convenience
-            {...register("amount", { required: true, min: 0.01 })}
+            defaultValue={outstandingBalance}
+            {...register("amount", { required: true })}
           />
-          {errors.amount && <span className="text-red-500 text-xs">Amount is required</span>}
         </div>
 
-        {/* Notes (Optional) */}
+        {/* MANUAL INR OVERRIDE - The "Received Amount System" */}
+        {isInternational && (
+           <div className="flex flex-col gap-2 p-3 bg-blue-50 dark:bg-blue-900/20 rounded border border-blue-100 dark:border-blue-900">
+             <label className="text-xs font-bold text-blue-700 dark:text-blue-400">
+               Actual Credited Amount (INR)
+             </label>
+             <Input 
+               type="number" 
+               step="0.01"
+               placeholder="e.g. 84500.00"
+               className="bg-white dark:bg-black"
+               {...register("received_amount_inr", { required: true })}
+             />
+             <p className="text-[10px] text-blue-600 dark:text-blue-400/80">
+               Enter the exact INR amount credited to your bank. This will be used for Ledger & Stats.
+             </p>
+           </div>
+        )}
+
         <div className="flex flex-col gap-2">
-           <Input 
-            placeholder="Transaction ID / Notes (Optional)" 
-            {...register("notes")}
-          />
+           <Input placeholder="Notes (Optional)" {...register("notes")} />
         </div>
 
         <Button type="submit" className="w-full" disabled={mutation.isPending}>
