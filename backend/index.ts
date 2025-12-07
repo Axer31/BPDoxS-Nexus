@@ -25,6 +25,7 @@ import ledgerRoutes from './routes/ledgerRoutes';
 import profileRoutes from './routes/profileRoutes';
 import notificationRoutes from './routes/notificationRoutes';
 import activityRoutes from './routes/activityRoutes';
+import paymentRoutes from './routes/paymentRoutes';
 import { ActivityService } from './services/ActivityService';
 
 import { authenticateToken } from './middleware/authMiddleware';
@@ -79,6 +80,7 @@ app.use('/api/ledger', ledgerRoutes);
 app.use('/api/profile', profileRoutes);
 app.use('/api/notifications', notificationRoutes);
 app.use('/api/activity', activityRoutes);
+app.use('/api/payments', paymentRoutes);
 
 // 5. Start Server
 app.listen(PORT, () => {

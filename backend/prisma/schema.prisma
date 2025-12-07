@@ -26,18 +26,18 @@ model User {
   password_hash      String
   role               String   @default("ADMIN")
   
-// Security Features
+  // Security Features
   two_factor_secret  String?
   two_factor_enabled Boolean  @default(false)
   backup_codes       Json?
-  reset_token        String?   @unique
+  reset_token        String?  @unique
   reset_token_expiry DateTime?
+
+  // Relations
   notifications      Notification[]
   activities         ActivityLog[]
 
   created_at         DateTime @default(now())
-
-  
 }
 
 model ActivityLog {
@@ -115,7 +115,7 @@ model BankAccount {
   sort_code           String?  // UK
   branch_address      String?  @db.Text
   upi_id              String?  // India UPI
-  payment_method      String? // e.g. "Wire Transfer", "ACH", "Zelle"
+  payment_method      String?  // e.g. "Wire Transfer", "ACH", "Zelle"
   
   created_at          DateTime @default(now())
 
@@ -136,16 +136,17 @@ model Invoice {
   client_id       Int
   client          Client   @relation(fields: [client_id], references: [id])
   
-  bank_account_id Int?     
+  bank_account_id Int?
   bank_account    BankAccount? @relation(fields: [bank_account_id], references: [id])
 
   // Invoice Details
-  status          String   @default("DRAFT") // DRAFT, SENT, PAID, OVERDUE
+  status          String   @default("DRAFT") // DRAFT, SENT, PARTIAL, PAID, OVERDUE
   issue_date      DateTime
   due_date        DateTime?
-  payment_date    DateTime?
+  
+  // Financials
   currency        String   @default("INR")
-  exchange_rate   Decimal  @default(1.0000) @db.Decimal(10, 4)
+  // REMOVED: exchange_rate and payment_date (handled by Payment model now)
   
   // JSON Data Blobs for Flexibility
   line_items      Json     // Array of items { desc, qty, rate, hsn }
@@ -159,10 +160,36 @@ model Invoice {
   remarks         String?  @db.Text
   is_manual_entry Boolean  @default(false) // Allows backdating/custom numbers
   
+  // Relations
+  payments        Payment[]
+
   created_at      DateTime @default(now())
   updated_at      DateTime @updatedAt
   
   @@map("Invoice")
+}
+
+model Payment {
+  id              Int       @id @default(autoincrement())
+  
+  invoice_id      Int
+  invoice         Invoice   @relation(fields: [invoice_id], references: [id])
+  
+  // The actual amount that hit the bank (Cash Basis)
+  amount_received Decimal   @db.Decimal(15, 2)
+  
+  // Date selected by user "below the calendar"
+  payment_date    DateTime  
+  
+  // Meta
+  payment_method  String?   // Cash, UPI, NEFT, Cheque
+  reference_no    String?   // Transaction ID
+  notes           String?   @db.Text
+  
+  recorded_at     DateTime  @default(now()) // Audit trail: when the record was created
+
+  @@index([invoice_id])
+  @@map("Payment")
 }
 
 model Quotation {
@@ -188,7 +215,7 @@ model Quotation {
   subtotal          Decimal  @db.Decimal(15, 2)
   grand_total       Decimal  @db.Decimal(15, 2)
   currency          String   @default("INR")
-  exchange_rate   Decimal  @default(1.0000) @db.Decimal(10, 4)
+  exchange_rate     Decimal  @default(1.0000) @db.Decimal(10, 4)
 
   created_at        DateTime @default(now())
   updated_at        DateTime @updatedAt
@@ -230,9 +257,9 @@ model QuotationSequence {
 
 // Lookup tables for Tax Logic
 model State {
-  code        Int     @id
-  name        String
-  country     String  @default("India")
+  code     Int     @id
+  name     String
+  country  String  @default("India")
 
   @@map("State")
 }
