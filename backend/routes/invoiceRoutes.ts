@@ -78,22 +78,19 @@ router.get('/:id/pdf', async (req, res) => {
 router.patch('/:id/status', async (req: Request, res: Response) => {
   try {
     const id = Number(req.params.id);
-    const { status, paymentDate } = req.body; // <--- EXTRACT PAYMENT DATE
+    const { status } = req.body;
 
     // Force uppercase (PAID, SENT, DRAFT)
     const normalizedStatus = status ? status.toUpperCase() : status;
 
-    // LOGIC: Set payment_date if PAID. Use provided date or default to now.
-    let finalPaymentDate = null;
-    if (normalizedStatus === 'PAID') {
-        finalPaymentDate = paymentDate ? new Date(paymentDate) : new Date();
-    }
+    // LOGIC: Set payment_date if PAID, otherwise null
+    const paymentDate = normalizedStatus === 'PAID' ? new Date() : null;
 
     const updated = await prisma.invoice.update({
         where: { id },
         data: { 
           status: normalizedStatus,
-          payment_date: finalPaymentDate 
+          payment_date: paymentDate // <--- Update the date
         }
     });
 
