@@ -1,6 +1,0 @@
-PORT=5000
-DATABASE_URL="mysql://invoicecore:InvoiceCore2025@localhost:3306/invoice_core_db"
-JWT_SECRET="40359618589f3e765b1931e7bcbe94dff7a38829dac92e65a0765ae6e1a85af89e78d8048b03efceff064ec51cd2fcc63ba680a53351f6983e254012a642b8fa"
-
-# Windows Path Example (Verify your own path):
-PUPPETEER_EXECUTABLE_PATH="C:\\Program Files\\BraveSoftware\\Brave-Browser\\Application\\brave.exe"
