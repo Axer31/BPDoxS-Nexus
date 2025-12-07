@@ -189,6 +189,8 @@ model Quotation {
   subtotal          Decimal  @db.Decimal(15, 2)
   grand_total       Decimal  @db.Decimal(15, 2)
   currency          String   @default("INR")
+  
+  is_manual_entry   Boolean  @default(false)
 
   created_at        DateTime @default(now())
   updated_at        DateTime @updatedAt

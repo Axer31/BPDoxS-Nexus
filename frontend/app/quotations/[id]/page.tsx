@@ -7,6 +7,7 @@ import { Label } from "@/components/ui/label";
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea"; 
 import { Calendar } from "@/components/ui/calendar";
+import { Switch } from "@/components/ui/switch"; // Import Switch
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import {
   Select,
@@ -16,7 +17,7 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { format } from "date-fns";
-import { CalendarIcon, Save, Loader2, ArrowLeft } from "lucide-react";
+import { CalendarIcon, Save, Loader2, ArrowLeft, Lock, Unlock } from "lucide-react"; // Added Icons
 import { QuotationItemsTable, QuoteItem } from "../new/quotation-items"; 
 import api from "@/lib/api"; 
 import Link from "next/link";
@@ -33,11 +34,12 @@ export default function EditQuotationPage() {
 
   // Data State
   const [quoteNumber, setQuoteNumber] = useState("");
+  const [isManual, setIsManual] = useState(false); // New State for Override
   const [issueDate, setIssueDate] = useState<Date | undefined>(new Date());
   
   const [clients, setClients] = useState<any[]>([]);
   const [selectedClientId, setSelectedClientId] = useState<string>("");
-  const [currency, setCurrency] = useState<string>("INR"); // Default currency
+  const [currency, setCurrency] = useState<string>("INR"); 
   
   const [items, setItems] = useState<QuoteItem[]>([]);
   
@@ -62,11 +64,12 @@ export default function EditQuotationPage() {
 
             // Populate Form
             setQuoteNumber(quote.quotation_number);
+            setIsManual(quote.is_manual_entry || false); // Load manual status
             setIssueDate(new Date(quote.issue_date));
             setSelectedClientId(quote.client_id.toString());
-            setCurrency(quote.currency || "INR"); // Load saved currency
+            setCurrency(quote.currency || "INR");
             
-            // Populate Items (Ensure type compatibility)
+            // Populate Items
             const loadedItems = typeof quote.line_items === 'string' 
                 ? JSON.parse(quote.line_items) 
                 : quote.line_items;
@@ -94,7 +97,6 @@ export default function EditQuotationPage() {
     setGrandTotal(total);
   }, [items]);
 
-  // Helper to format currency for display
   const formatMoney = (amount: number) => {
     return new Intl.NumberFormat('en-IN', {
         style: 'currency',
@@ -110,13 +112,16 @@ export default function EditQuotationPage() {
         await api.put(`/quotations/${id}`, {
             clientId: Number(selectedClientId),
             issueDate: issueDate?.toISOString(),
-            currency, // Send updated currency
+            currency,
             items,
             subtotal: grandTotal, 
             grandTotal,
             servicesOffered,
             contractTerms,
-            remarks
+            remarks,
+            // Include Manual Override Data
+            isManual, 
+            manualNumber: isManual ? quoteNumber : undefined 
         });
         alert("Quotation Updated Successfully");
         router.push('/quotations');
@@ -158,6 +163,44 @@ export default function EditQuotationPage() {
          {/* Sidebar: Meta Data */}
          <Card className="md:col-span-1 shadow-sm border-none bg-white">
             <CardContent className="p-6 space-y-5">
+                
+                {/* Manual Override Toggle */}
+                <div className="flex items-center justify-between border-b pb-4">
+                    <div className="space-y-0.5">
+                        <Label className="text-sm font-medium">Manual Override</Label>
+                        <p className="text-xs text-muted-foreground">Edit number manually</p>
+                    </div>
+                    <Switch 
+                        checked={isManual} 
+                        onCheckedChange={setIsManual} 
+                        className="data-[state=checked]:bg-primary"
+                    />
+                </div>
+
+                <div className="space-y-2">
+                    <Label>Quotation No</Label>
+                    {isManual ? (
+                        <div className="relative">
+                            <Unlock className="absolute left-3 top-2.5 h-4 w-4 text-amber-500" />
+                            <Input 
+                                value={quoteNumber} 
+                                onChange={(e) => setQuoteNumber(e.target.value)}
+                                placeholder="e.g. Q-CUSTOM-001"
+                                className="pl-9 font-mono border-amber-200 focus-visible:ring-amber-500" 
+                            />
+                        </div>
+                    ) : (
+                        <div className="relative">
+                            <Lock className="absolute left-3 top-2.5 h-4 w-4 text-muted-foreground" />
+                            <Input 
+                                value={quoteNumber} 
+                                disabled 
+                                className="pl-9 bg-slate-50 dark:bg-slate-900/50 font-mono text-muted-foreground" 
+                            />
+                        </div>
+                    )}
+                </div>
+
                 <div className="space-y-2">
                     <Label>Client</Label>
                     <select 
@@ -208,7 +251,6 @@ export default function EditQuotationPage() {
                 
                 {/* ITEMS TABLE */}
                 <Label className="text-base font-semibold">Bill of Quantities</Label>
-                {/* Pass currency to table for row formatting */}
                 <QuotationItemsTable items={items} setItems={setItems} currency={currency} />
                 
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-4">

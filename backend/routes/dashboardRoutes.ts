@@ -1,3 +1,5 @@
+// backend/routes/dashboardRoutes.ts
+
 import { Router, Request, Response } from 'express';
 import { PrismaClient } from '@prisma/client';
 import { format } from 'date-fns';
@@ -5,9 +7,10 @@ import { format } from 'date-fns';
 const router = Router();
 const prisma = new PrismaClient();
 
-// Helper: Get Financial Year String
+// Helper: Get Financial Year String (e.g., "FY 2024-25")
 const getFinancialYear = (date: Date) => {
     const month = date.getMonth(); 
+    // If Jan-Mar, start year is previous year. Else current year.
     const startYear = month < 3 ? date.getFullYear() - 1 : date.getFullYear();
     const endYear = startYear + 1;
     return `FY ${startYear}-${endYear.toString().slice(-2)}`;
@@ -24,10 +27,49 @@ router.get('/stats', async (req: Request, res: Response) => {
     const fromDate = from ? new Date(from as string) : undefined;
     const toDate = to ? new Date(to as string) : undefined;
 
-    const response: any = { summary: {}, charts: {}, tables: {} };
+    const response: any = { summary: {}, charts: {}, tables: {}, availableYears: [] };
 
     // ==================================================================================
-    // 1. SUMMARY & TOP UNPAID (Global Stats)
+    // 1. AVAILABLE YEARS (Dynamic Filter Logic)
+    // ==================================================================================
+    if (shouldFetch('availableYears')) {
+        // A. Get Min/Max dates from Invoices and Expenses to determine the active range
+        const [invBounds, expBounds] = await Promise.all([
+            prisma.invoice.aggregate({ _min: { issue_date: true }, _max: { issue_date: true } }),
+            prisma.expense.aggregate({ _min: { date: true }, _max: { date: true } })
+        ]);
+
+        // B. Consolidate bounds to find global Min and Max
+        const minDates = [invBounds._min.issue_date, expBounds._min.date].filter(d => d !== null) as Date[];
+        const maxDates = [invBounds._max.issue_date, expBounds._max.date].filter(d => d !== null) as Date[];
+
+        // C. Default to current FY if no data exists
+        const currentMonth = new Date().getMonth();
+        const currentFyStart = currentMonth < 3 ? new Date().getFullYear() - 1 : new Date().getFullYear();
+        
+        let startYear = currentFyStart;
+        let endYear = currentFyStart;
+
+        // D. Calculate Global FY Range based on data
+        if (minDates.length > 0) {
+            const minDate = new Date(Math.min(...minDates.map(d => d.getTime())));
+            startYear = minDate.getMonth() < 3 ? minDate.getFullYear() - 1 : minDate.getFullYear();
+        }
+        if (maxDates.length > 0) {
+             const maxDate = new Date(Math.max(...maxDates.map(d => d.getTime())));
+             endYear = maxDate.getMonth() < 3 ? maxDate.getFullYear() - 1 : maxDate.getFullYear();
+        }
+
+        // E. Generate Array (Descending order: 2025, 2024, 2023...)
+        const activeYears = [];
+        for (let y = endYear; y >= startYear; y--) {
+            activeYears.push(y);
+        }
+        response.availableYears = activeYears;
+    }
+
+    // ==================================================================================
+    // 2. SUMMARY & TOP METRICS
     // ==================================================================================
     if (shouldFetch('summary')) {
         // FETCH REVENUE (PAID) - WITH MANUAL INR SUPPORT
@@ -38,7 +80,7 @@ router.get('/stats', async (req: Request, res: Response) => {
             },
             select: { 
                 grand_total: true, 
-                received_amount: true // <--- Fetch Manual Amount
+                received_amount: true // <--- Fetch Manual Amount if exists
             }
         });
 
@@ -84,7 +126,7 @@ router.get('/stats', async (req: Request, res: Response) => {
     }
 
     // ==================================================================================
-    // 2. MONTHLY STATS (Charts)
+    // 3. MONTHLY STATS (Charts)
     // ==================================================================================
     if (shouldFetch('monthlyStats')) {
         const paidInvoices = await prisma.invoice.findMany({
@@ -95,7 +137,7 @@ router.get('/stats', async (req: Request, res: Response) => {
             select: { 
                 payment_date: true, 
                 grand_total: true,
-                received_amount: true // <--- Fetch Manual Amount
+                received_amount: true
             }
         });
 
@@ -106,6 +148,7 @@ router.get('/stats', async (req: Request, res: Response) => {
 
         const statsMap = new Map<string, { revenue: number; expense: number; count: number }>();
 
+        // Aggregate Revenue
         paidInvoices.forEach(inv => {
             const d = inv.payment_date || new Date(); 
             const month = format(d, 'MMM yyyy');
@@ -119,6 +162,7 @@ router.get('/stats', async (req: Request, res: Response) => {
             statsMap.set(month, existing);
         });
 
+        // Aggregate Expenses
         allExpenses.forEach(exp => {
             const month = format(new Date(exp.date), 'MMM yyyy');
             const existing = statsMap.get(month) || { revenue: 0, expense: 0, count: 0 };
@@ -145,7 +189,7 @@ router.get('/stats', async (req: Request, res: Response) => {
     }
 
     // ==================================================================================
-    // 3. YEARLY COMPARISON
+    // 4. YEARLY COMPARISON
     // ==================================================================================
     if (shouldFetch('yearlyComparison')) {
         const currentYr = new Date().getFullYear();
@@ -159,6 +203,7 @@ router.get('/stats', async (req: Request, res: Response) => {
             const minStartYear = Math.min(...requestedStartYears);
             const maxStartYear = Math.max(...requestedStartYears);
             
+            // Fetch all paid invoices in the broad range
             const historicalInvoices = await prisma.invoice.findMany({
                 where: {
                     status: { in: ['PAID', 'Paid'] },
@@ -170,7 +215,7 @@ router.get('/stats', async (req: Request, res: Response) => {
                 select: { 
                     payment_date: true, 
                     grand_total: true,
-                    received_amount: true // <--- Fetch Manual Amount
+                    received_amount: true
                 }
             });
 
@@ -184,7 +229,6 @@ router.get('/stats', async (req: Request, res: Response) => {
                 if (!inv.payment_date) return;
                 const fyStr = getFinancialYear(inv.payment_date);
                 if (fyMap.has(fyStr)) {
-                    // LOGIC: Use 'received_amount' if exists, else 'grand_total'
                     const amount = inv.received_amount ? Number(inv.received_amount) : Number(inv.grand_total);
                     fyMap.set(fyStr, (fyMap.get(fyStr) || 0) + amount);
                 }
@@ -198,7 +242,7 @@ router.get('/stats', async (req: Request, res: Response) => {
     }
 
     // ==================================================================================
-    // 4. EXPENSE TABLE
+    // 5. EXPENSE TABLE
     // ==================================================================================
     if (shouldFetch('expenseTable')) {
         const expenseRaw = await prisma.expense.findMany({

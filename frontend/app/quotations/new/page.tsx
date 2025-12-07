@@ -7,6 +7,7 @@ import { Label } from "@/components/ui/label";
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
 import { Calendar } from "@/components/ui/calendar";
+import { Switch } from "@/components/ui/switch"; // Import Switch
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import {
   Select,
@@ -16,7 +17,7 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { format } from "date-fns";
-import { CalendarIcon, Save, Loader2, ArrowLeft, Mail, Phone } from "lucide-react";
+import { CalendarIcon, Save, Loader2, ArrowLeft, Mail, Phone, Lock, Unlock } from "lucide-react";
 import { QuotationItemsTable, QuoteItem } from "./quotation-items";
 import api from "@/lib/api"; 
 import Link from "next/link";
@@ -32,11 +33,14 @@ export default function NewQuotationPage() {
   
   const [clients, setClients] = useState<any[]>([]);
   const [selectedClientId, setSelectedClientId] = useState<string>("");
-  const [selectedClient, setSelectedClient] = useState<any>(null); // Store full client obj
+  const [selectedClient, setSelectedClient] = useState<any>(null);
   
   const [currency, setCurrency] = useState<string>("INR");
-  
   const [isSaving, setIsSaving] = useState(false);
+
+  // Manual Override State
+  const [isManual, setIsManual] = useState(false);
+  const [manualNumber, setManualNumber] = useState("");
 
   // BOQ (Items)
   const [items, setItems] = useState<QuoteItem[]>([
@@ -55,7 +59,6 @@ export default function NewQuotationPage() {
     api.get('/clients').then(res => setClients(res.data)).catch(console.error);
   }, []);
 
-  // Handle Client Selection (Auto-fill Contact/Email)
   const handleClientChange = (e: React.ChangeEvent<HTMLSelectElement>) => {
     const id = e.target.value;
     setSelectedClientId(id);
@@ -63,14 +66,12 @@ export default function NewQuotationPage() {
     setSelectedClient(client || null);
   };
 
-  // --- Calculations ---
   useEffect(() => {
     const newSubtotal = items.reduce((sum, item) => sum + item.amount, 0);
     setSubtotal(newSubtotal);
-    setGrandTotal(newSubtotal); // Quotations typically show raw estimates (Pre-Tax)
+    setGrandTotal(newSubtotal); 
   }, [items]);
 
-  // Helper to format currency for display
   const formatMoney = (amount: number) => {
     return new Intl.NumberFormat('en-IN', {
         style: 'currency',
@@ -83,34 +84,35 @@ export default function NewQuotationPage() {
   const handleSave = async () => {
     if (!selectedClientId) return alert("Please select a Client.");
     if (items.length === 0 || subtotal === 0) return alert("Please add items to the BOQ.");
+    if (isManual && !manualNumber.trim()) return alert("Please enter the Manual Quotation Number.");
 
     try {
       setIsSaving(true);
       const payload = {
         clientId: Number(selectedClientId),
         issueDate: issueDate?.toISOString(),
-        expiryDate: expiryDate?.toISOString(), // Optional
-        currency: currency, // Save the selected currency
+        expiryDate: expiryDate?.toISOString(), 
+        currency: currency,
         items: items,
         subtotal: subtotal,
         grandTotal: grandTotal,
-        
-        // Mapped Fields
         servicesOffered: servicesOffered,
         contractTerms: contractTerms,
         remarks: remarks,
+        
+        // Manual Override Fields
+        isManual: isManual,
+        manualNumber: isManual ? manualNumber : undefined
       };
 
       const response = await api.post('/quotations', payload);
-      
-      // Success Feedback
       alert(`Success! Quotation ${response.data.quotation_number} Created`);
-      
       router.push('/quotations');
 
     } catch (error: any) {
       console.error(error);
-      alert("Failed to create quotation. Check console for details.");
+      const msg = error.response?.data?.error || "Failed to create quotation.";
+      alert(msg);
     } finally {
       setIsSaving(false);
     }
@@ -159,7 +161,6 @@ export default function NewQuotationPage() {
                         </select>
                     </div>
 
-                    {/* Auto-filled Fields */}
                     <div className="space-y-2">
                         <Label>Contact Phone</Label>
                         <div className="relative">
@@ -181,12 +182,44 @@ export default function NewQuotationPage() {
             <Card className="shadow-horizon border-none bg-card">
                 <CardHeader><CardTitle className="text-base">Quote Details</CardTitle></CardHeader>
                 <CardContent className="space-y-4">
+                    
+                    {/* Manual Override Toggle */}
+                    <div className="flex items-center justify-between border-b pb-4">
+                        <div className="space-y-0.5">
+                            <Label className="text-sm font-medium">Manual Override</Label>
+                            <p className="text-xs text-muted-foreground">Set number manually</p>
+                        </div>
+                        <Switch 
+                            checked={isManual} 
+                            onCheckedChange={setIsManual} 
+                            className="data-[state=checked]:bg-primary"
+                        />
+                    </div>
+
                     <div className="space-y-2">
                         <Label>Quotation No</Label>
-                        <Input value="Auto-generated" disabled className="bg-slate-50 dark:bg-slate-900/50 font-mono text-muted-foreground" />
+                        {isManual ? (
+                            <div className="relative">
+                                <Unlock className="absolute left-3 top-2.5 h-4 w-4 text-amber-500" />
+                                <Input 
+                                    value={manualNumber} 
+                                    onChange={(e) => setManualNumber(e.target.value)}
+                                    placeholder="e.g. Q-CUSTOM-001"
+                                    className="pl-9 font-mono border-amber-200 focus-visible:ring-amber-500" 
+                                />
+                            </div>
+                        ) : (
+                            <div className="relative">
+                                <Lock className="absolute left-3 top-2.5 h-4 w-4 text-muted-foreground" />
+                                <Input 
+                                    value="Auto-generated" 
+                                    disabled 
+                                    className="pl-9 bg-slate-50 dark:bg-slate-900/50 font-mono text-muted-foreground" 
+                                />
+                            </div>
+                        )}
                     </div>
                     
-                    {/* Currency Selector */}
                     <div className="space-y-2">
                         <Label>Currency</Label>
                         <Select value={currency} onValueChange={setCurrency}>
@@ -217,6 +250,7 @@ export default function NewQuotationPage() {
                             </PopoverContent>
                         </Popover>
                     </div>
+                    
                     <div className="space-y-2 flex flex-col">
                         <Label>Valid Until (Optional)</Label>
                         <Popover>
@@ -235,16 +269,12 @@ export default function NewQuotationPage() {
             </Card>
         </div>
 
-        {/* RIGHT COLUMN: BOQ & Scope (Wider area for table) */}
+        {/* RIGHT COLUMN: BOQ & Scope (Unchanged logic, just keeping structure) */}
         <div className="xl:col-span-2 space-y-6">
-            
-            {/* 3. BOQ (Bill of Quantities) */}
             <Card className="shadow-horizon border-none bg-card">
                 <CardHeader><CardTitle className="text-base">Bill of Quantities</CardTitle></CardHeader>
                 <CardContent className="p-6">
-                    {/* Pass currency to items table for correct symbol display */}
                     <QuotationItemsTable items={items} setItems={setItems} currency={currency} />
-                    
                     <div className="flex justify-end mt-6 pt-4 border-t">
                         <div className="text-right w-64">
                             <div className="flex justify-between items-center mb-1">
@@ -253,16 +283,13 @@ export default function NewQuotationPage() {
                             </div>
                             <div className="flex justify-between items-center border-t pt-2 mt-2">
                                 <span className="font-bold text-lg text-foreground">Total Estimate</span>
-                                <span className="text-xl font-bold text-primary">
-                                    {formatMoney(grandTotal)}
-                                </span>
+                                <span className="text-xl font-bold text-primary">{formatMoney(grandTotal)}</span>
                             </div>
                         </div>
                     </div>
                 </CardContent>
             </Card>
 
-            {/* 4. Additional Info */}
             <Card className="shadow-horizon border-none bg-card">
                 <CardHeader><CardTitle className="text-base">Scope & Terms</CardTitle></CardHeader>
                 <CardContent className="space-y-4">
@@ -286,7 +313,6 @@ export default function NewQuotationPage() {
                             />
                         </div>
                     </div>
-                    
                     <div className="space-y-2 pt-2">
                         <Label>Internal Remarks (Not visible to client)</Label>
                         <Input 

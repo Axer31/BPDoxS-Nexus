@@ -4,7 +4,7 @@ import React, { useEffect, useState } from "react";
 import api from "@/lib/api";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
-import { DollarSign, Activity, TrendingUp, Wallet, AlertCircle, Loader2, Check, ChevronsUpDown, Filter } from "lucide-react";
+import { DollarSign, Activity, TrendingUp, Wallet, Loader2, Check, ChevronsUpDown } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { ScrollArea } from "@/components/ui/scroll-area";
@@ -29,66 +29,93 @@ export default function DashboardPage() {
   const currentMonth = new Date().getMonth();
   const initialFyStart = currentMonth < 3 ? currentYear - 1 : currentYear;
   
-  // UNLIMITED YEARS GENERATOR (1950 - 2050)
-  const availableYears = Array.from({ length: 100 }, (_, i) => currentYear + 10 - i);
-
   // --- STATE MANAGEMENT ---
   
-  // 1. Comparison Chart State
+  // 0. Dynamic Years State (Replaces hardcoded list)
+  const [activeYears, setActiveYears] = useState<number[]>([initialFyStart]); 
+
+  // 1. Overview Filter State
+  const [overviewFy, setOverviewFy] = useState<string>(initialFyStart.toString());
+  const [summary, setSummary] = useState<any>({});
+
+  // 2. Comparison Chart State
   const [comparisonYears, setComparisonYears] = useState<number[]>([
     initialFyStart, initialFyStart - 1, initialFyStart - 2, initialFyStart - 3
   ]);
   const [isYearDropdownOpen, setIsYearDropdownOpen] = useState(false);
   const [yearlyData, setYearlyData] = useState<any[]>([]);
 
-  // 2. Net Balance State
+  // 3. Net Balance State
   const [netBalanceFy, setNetBalanceFy] = useState<string>(initialFyStart.toString());
   const [netBalanceData, setNetBalanceData] = useState<any[]>([]);
 
-  // 3. Monthly Performance State
+  // 4. Monthly Performance State
   const [monthlyFy, setMonthlyFy] = useState<string>(initialFyStart.toString());
   const [monthlyData, setMonthlyData] = useState<any[]>([]);
 
-  // 4. Expense Table State
+  // 5. Expense Table State
   const [expenseFy, setExpenseFy] = useState<string>(initialFyStart.toString());
   const [expenseTable, setExpenseTable] = useState<any[]>([]);
   const [expenseColumns, setExpenseColumns] = useState<string[]>([]);
 
-  // 5. Recent Balances State
+  // 6. Recent Balances State
   const [recentFy, setRecentFy] = useState<string>(initialFyStart.toString());
   const [recentData, setRecentData] = useState<any[]>([]);
 
-  // 6. Global/Summary State
-  const [summary, setSummary] = useState<any>({});
+  // 7. Shared Data State
   const [sharedInvoices, setSharedInvoices] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
 
-  // --- DATA FETCHING (Independent) ---
+  // --- DATA FETCHING ---
 
-  // A. Fetch Initial Summary & Pending Invoices (Once)
+  // A. Fetch Initial Static Data (Shared Invoices & Available Years)
   useEffect(() => {
-    const fetchGlobal = async () => {
-        const fyDates = getFinancialYearDates(initialFyStart); // Default to current FY
+    const fetchInit = async () => {
+        const fyDates = getFinancialYearDates(parseInt(overviewFy)); // Use initial FY for summary
         const params = new URLSearchParams({
             from: fyDates.from.toISOString(),
             to: fyDates.to.toISOString(),
-            sections: 'summary'
+            sections: 'summary,availableYears' // <--- Request Available Years
         });
-        
+
         try {
             const [statsRes, sharedRes] = await Promise.all([
                 api.get(`/dashboard/stats?${params}`),
                 api.get('/invoices/shared')
             ]);
+            
             setSummary(statsRes.data.summary);
             setSharedInvoices(sharedRes.data);
+
+            // Update Active Years List if data exists
+            if (statsRes.data.availableYears && statsRes.data.availableYears.length > 0) {
+                setActiveYears(statsRes.data.availableYears);
+            }
         } catch (e) { console.error(e); } 
         finally { setLoading(false); }
     };
-    fetchGlobal();
+    fetchInit();
   }, []);
 
-  // B. Fetch Yearly Comparison
+  // B. Fetch Summary ONLY when Overview Dropdown Changes (Reactive)
+  useEffect(() => {
+    if (loading) return; // Skip on initial load (handled by fetchInit)
+    const fetchSummary = async () => {
+        const fyDates = getFinancialYearDates(parseInt(overviewFy));
+        const params = new URLSearchParams({
+            from: fyDates.from.toISOString(),
+            to: fyDates.to.toISOString(),
+            sections: 'summary'
+        });
+        try {
+            const res = await api.get(`/dashboard/stats?${params}`);
+            setSummary(res.data.summary);
+        } catch (e) { console.error(e); }
+    };
+    fetchSummary();
+  }, [overviewFy]);
+
+  // C. Fetch Yearly Comparison
   useEffect(() => {
     const fetchYearly = async () => {
         if (comparisonYears.length === 0) return;
@@ -104,7 +131,7 @@ export default function DashboardPage() {
     fetchYearly();
   }, [comparisonYears]);
 
-  // C. Fetch Net Balance
+  // D. Fetch Net Balance
   useEffect(() => {
     const fetchNet = async () => {
         const fyDates = getFinancialYearDates(parseInt(netBalanceFy));
@@ -119,7 +146,7 @@ export default function DashboardPage() {
     fetchNet();
   }, [netBalanceFy]);
 
-  // D. Fetch Monthly Performance
+  // E. Fetch Monthly Performance
   useEffect(() => {
     const fetchMonthly = async () => {
         const fyDates = getFinancialYearDates(parseInt(monthlyFy));
@@ -134,7 +161,7 @@ export default function DashboardPage() {
     fetchMonthly();
   }, [monthlyFy]);
 
-  // E. Fetch Expenses
+  // F. Fetch Expenses
   useEffect(() => {
     const fetchExpenses = async () => {
         const fyDates = getFinancialYearDates(parseInt(expenseFy));
@@ -150,7 +177,7 @@ export default function DashboardPage() {
     fetchExpenses();
   }, [expenseFy]);
 
-  // F. Fetch Recent Balances
+  // G. Fetch Recent Balances
   useEffect(() => {
     const fetchRecent = async () => {
         const fyDates = getFinancialYearDates(parseInt(recentFy));
@@ -188,26 +215,45 @@ export default function DashboardPage() {
   return (
     <div className="p-6 space-y-6">
       
-      {/* HEADER */}
+      {/* HEADER WITH FILTER */}
       <div className="flex justify-between items-center">
         <div>
             <h1 className="text-3xl font-bold text-foreground">Dashboard</h1>
             <p className="text-muted-foreground">Financial Overview</p>
         </div>
+
+        {/* OVERVIEW FILTER: Uses activeYears */}
+        <div className="flex items-center gap-2">
+            <span className="text-sm font-medium text-muted-foreground">Overview for:</span>
+            <Select value={overviewFy} onValueChange={setOverviewFy}>
+                <SelectTrigger className="h-9 w-[150px] bg-background border-input shadow-sm">
+                    <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                    <ScrollArea className="max-h-[300px]">
+                        {activeYears.map(y => (
+                            <SelectItem key={y} value={y.toString()}>
+                                FY {y}-{y.toString().slice(-2) === '99' ? '00' : (y+1).toString().slice(-2)}
+                            </SelectItem>
+                        ))}
+                    </ScrollArea>
+                </SelectContent>
+            </Select>
+        </div>
       </div>
       
-      {/* 1. TOP METRICS (Current FY) */}
+      {/* 1. TOP METRICS */}
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
         <MetricCard title="Total Revenue" value={summary?.totalRevenue || 0} icon={<DollarSign />} color="text-blue-600" bg="bg-blue-50 dark:bg-blue-900/20" />
         <MetricCard title="Total Expenses" value={summary?.totalExpense || 0} icon={<Wallet />} color="text-red-600" bg="bg-red-50 dark:bg-red-900/20" />
         <MetricCard title="Net Profit" value={summary?.netProfit || 0} icon={<Activity />} color="text-green-600" bg="bg-green-50 dark:bg-green-900/20" />
-        <MetricCard title="Avg Sale" value={monthlyData.length > 0 ? monthlyData[monthlyData.length - 1].avgSale : 0} icon={<TrendingUp />} color="text-purple-600" bg="bg-purple-50 dark:bg-purple-900/20" />
+        <MetricCard title="Pending Revenue" value={summary?.totalPending || 0} icon={<TrendingUp />} color="text-orange-600" bg="bg-orange-50 dark:bg-orange-900/20" />
       </div>
 
       {/* 2. TOP CHART ROW */}
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
         
-        {/* YEARLY COMPARISON */}
+        {/* YEARLY COMPARISON: Uses activeYears */}
         <ChartCard 
             title="Yearly Comparison" 
             description="Revenue per Financial Year"
@@ -221,8 +267,8 @@ export default function DashboardPage() {
                     <PopoverContent className="w-[200px] p-0" align="end">
                         <Command>
                             <CommandGroup>
-                                <ScrollArea className="h-[300px]">
-                                    {availableYears.map((year) => (
+                                <ScrollArea className="max-h-[300px]">
+                                    {activeYears.map((year) => (
                                         <CommandItem key={year} value={year.toString()} onSelect={() => toggleComparisonYear(year)}>
                                             <Check className={cn("mr-2 h-4 w-4", comparisonYears.includes(year) ? "opacity-100" : "opacity-0")} />
                                             FY {year}-{year.toString().slice(-2) === '99' ? '00' : (year+1).toString().slice(-2)}
@@ -240,17 +286,13 @@ export default function DashboardPage() {
                     <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="hsl(var(--border))" />
                     <XAxis dataKey="year" interval={0} tick={<CustomizedAxisTick />} height={60} stroke="hsl(var(--muted-foreground))" tickLine={false} axisLine={false} />
                     <YAxis fontSize={12} stroke="hsl(var(--muted-foreground))" tickFormatter={(val) => `₹${val/1000}k`} tickLine={false} axisLine={false} />
-                    <Tooltip 
-                        cursor={{ fill: 'hsl(var(--muted)/0.2)' }} 
-                        contentStyle={tooltipStyle} 
-                        formatter={(val: number) => formatCurrency(val)} 
-                    />
+                    <Tooltip cursor={{ fill: 'hsl(var(--muted)/0.2)' }} contentStyle={tooltipStyle} formatter={(val: number) => formatCurrency(val)} />
                     <Bar dataKey="total" name="Revenue" fill="hsl(var(--primary))" radius={[4,4,0,0]} />
                 </BarChart>
             </ResponsiveContainer>
         </ChartCard>
 
-        {/* NET BALANCE TREND */}
+        {/* NET BALANCE TREND: Uses activeYears */}
         <ChartCard 
             title="Net Balance Trend" 
             description={`Cumulative for FY ${netBalanceFy}-${parseInt(netBalanceFy)+1}`}
@@ -258,8 +300,8 @@ export default function DashboardPage() {
                 <Select value={netBalanceFy} onValueChange={setNetBalanceFy}>
                     <SelectTrigger className="h-8 w-[140px]"><SelectValue /></SelectTrigger>
                     <SelectContent>
-                        <ScrollArea className="h-[300px]">
-                         {availableYears.slice(0, 50).map(y => (
+                        <ScrollArea className="max-h-[300px]">
+                         {activeYears.map(y => (
                             <SelectItem key={y} value={y.toString()}>FY {y}-{y.toString().slice(-2) === '99' ? '00' : (y+1).toString().slice(-2)}</SelectItem>
                          ))}
                         </ScrollArea>
@@ -285,7 +327,7 @@ export default function DashboardPage() {
         </ChartCard>
       </div>
 
-      {/* 3. MONTHLY PERFORMANCE */}
+      {/* 3. MONTHLY PERFORMANCE: Uses activeYears */}
       <div className="grid grid-cols-1 gap-6">
         <ChartCard 
             title="Monthly Performance" 
@@ -294,8 +336,8 @@ export default function DashboardPage() {
                 <Select value={monthlyFy} onValueChange={setMonthlyFy}>
                     <SelectTrigger className="h-8 w-[140px]"><SelectValue /></SelectTrigger>
                     <SelectContent>
-                       <ScrollArea className="h-[300px]">
-                        {availableYears.slice(0, 50).map(y => (
+                       <ScrollArea className="max-h-[300px]">
+                        {activeYears.map(y => (
                             <SelectItem key={y} value={y.toString()}>FY {y}-{y.toString().slice(-2) === '99' ? '00' : (y+1).toString().slice(-2)}</SelectItem>
                         ))}
                        </ScrollArea>
@@ -317,7 +359,7 @@ export default function DashboardPage() {
         </ChartCard>
       </div>
 
-      {/* 4. EXPENSE TABLE */}
+      {/* 4. EXPENSE TABLE: Uses activeYears */}
       <Card className="shadow-horizon border-none bg-card overflow-hidden">
         <CardHeader className="flex flex-row items-center justify-between">
             <div>
@@ -327,8 +369,8 @@ export default function DashboardPage() {
             <Select value={expenseFy} onValueChange={setExpenseFy}>
                 <SelectTrigger className="h-8 w-[140px]"><SelectValue /></SelectTrigger>
                 <SelectContent>
-                   <ScrollArea className="h-[300px]">
-                    {availableYears.slice(0, 50).map(y => (
+                   <ScrollArea className="max-h-[300px]">
+                    {activeYears.map(y => (
                         <SelectItem key={y} value={y.toString()}>FY {y}-{y.toString().slice(-2) === '99' ? '00' : (y+1).toString().slice(-2)}</SelectItem>
                     ))}
                    </ScrollArea>
@@ -363,7 +405,7 @@ export default function DashboardPage() {
         </CardContent>
       </Card>
       
-      {/* 5. BOTTOM TABLES */}
+      {/* 5. BOTTOM TABLES: Uses activeYears for Balance History */}
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
           <Card className="shadow-horizon border-none bg-card">
             <CardHeader className="flex flex-row items-center justify-between">
@@ -371,8 +413,8 @@ export default function DashboardPage() {
                 <Select value={recentFy} onValueChange={setRecentFy}>
                     <SelectTrigger className="h-8 w-[120px]"><SelectValue /></SelectTrigger>
                     <SelectContent>
-                       <ScrollArea className="h-[300px]">
-                        {availableYears.slice(0, 20).map(y => (
+                       <ScrollArea className="max-h-[300px]">
+                        {activeYears.slice(0, 20).map(y => (
                             <SelectItem key={y} value={y.toString()}>FY {y}-{y.toString().slice(-2) === '99' ? '00' : (y+1).toString().slice(-2)}</SelectItem>
                         ))}
                        </ScrollArea>
@@ -405,7 +447,7 @@ export default function DashboardPage() {
             </CardContent>
         </Card>
 
-        {/* SHARED INVOICES (No filter needed, shows pending) */}
+        {/* SHARED INVOICES */}
         <Card className="shadow-horizon border-none bg-card">
             <CardHeader>
                 <CardTitle>Pending Invoices</CardTitle>
