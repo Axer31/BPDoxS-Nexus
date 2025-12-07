@@ -71,11 +71,11 @@ export default function NewQuotationPage() {
   }, [items]);
 
   // Helper to format currency for display
-  const formatCurrency = (amount: number) => {
-    const selectedCurr = AVAILABLE_CURRENCIES.find(c => c.code === currency);
-    return new Intl.NumberFormat(selectedCurr?.locale || 'en-IN', { 
-        style: 'currency', 
-        currency: currency 
+  const formatMoney = (amount: number) => {
+    return new Intl.NumberFormat('en-IN', {
+        style: 'currency',
+        currency: currency,
+        minimumFractionDigits: 2
     }).format(amount);
   };
 
@@ -249,12 +249,12 @@ export default function NewQuotationPage() {
                         <div className="text-right w-64">
                             <div className="flex justify-between items-center mb-1">
                                 <span className="text-muted-foreground text-sm">Subtotal</span>
-                                <span className="font-medium">{formatCurrency(subtotal)}</span>
+                                <span className="font-medium">{formatMoney(subtotal)}</span>
                             </div>
                             <div className="flex justify-between items-center border-t pt-2 mt-2">
                                 <span className="font-bold text-lg text-foreground">Total Estimate</span>
                                 <span className="text-xl font-bold text-primary">
-                                    {formatCurrency(grandTotal)}
+                                    {formatMoney(grandTotal)}
                                 </span>
                             </div>
                         </div>
