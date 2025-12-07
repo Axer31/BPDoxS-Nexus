@@ -533,8 +533,7 @@ export const generateInvoiceHTML = (invoice: any, ownerProfile: any): string => 
 <div id="footer">
     <div id="footer-line"></div>
     <div><strong>${profile.company_name || ''}</strong></div>
-    <div>${profile.address || ''}</div>
-    <div>${profile.state || ''}, India</div>
+    <div>${profile.address || ''}, ${profile.state || ''}, India</div>
     <div>GSTIN: ${profile.gstin || ''} | CIN: ${profile.cin || ''}</div>
     <div style="margin-top:5px; color:#555;">This is a computer-generated invoice and no signature is required.</div>
 </div>

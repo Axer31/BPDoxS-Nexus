@@ -52,6 +52,7 @@ model ActivityLog {
   ip_address  String?
   
   created_at  DateTime @default(now())
+  timezone    String   @default("Asia/Kolkata")
 
   @@map("ActivityLog")
 }
