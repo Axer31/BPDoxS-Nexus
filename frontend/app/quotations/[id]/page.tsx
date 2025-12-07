@@ -95,11 +95,11 @@ export default function EditQuotationPage() {
   }, [items]);
 
   // Helper to format currency for display
-  const formatCurrency = (amount: number) => {
-    const selectedCurr = AVAILABLE_CURRENCIES.find(c => c.code === currency);
-    return new Intl.NumberFormat(selectedCurr?.locale || 'en-IN', { 
-        style: 'currency', 
-        currency: currency 
+  const formatMoney = (amount: number) => {
+    return new Intl.NumberFormat('en-IN', {
+        style: 'currency',
+        currency: currency,
+        minimumFractionDigits: 2
     }).format(amount);
   };
 
@@ -235,7 +235,7 @@ export default function EditQuotationPage() {
                         <div className="flex justify-between font-bold text-lg text-primary">
                             <span>Total Estimate</span>
                             <span>
-                                {formatCurrency(grandTotal)}
+                                {formatMoney(grandTotal)}
                             </span>
                         </div>
                     </div>

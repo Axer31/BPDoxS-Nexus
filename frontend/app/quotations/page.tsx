@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useState, useMemo } from 'react';
 import api from "@/lib/api";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -15,16 +15,16 @@ import {
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { Calendar } from "@/components/ui/calendar";
 import { 
-  Plus, FileText, Loader2, Trash2, Eye, Pencil, Search, Filter, Calendar as CalendarIcon, X 
+  Plus, FileText, Loader2, Trash2, Eye, Pencil, Search, Calendar as CalendarIcon, X 
 } from "lucide-react";
 import Link from "next/link";
 import { 
   format, isWithinInterval, startOfDay, endOfDay, 
-  startOfMonth, startOfQuarter, startOfYear, subMonths 
+  startOfMonth, startOfQuarter, startOfYear 
 } from "date-fns";
-import { Badge } from "@/components/ui/badge";
 import { cn } from "@/lib/utils";
 import { DateRange } from "react-day-picker";
+import { AVAILABLE_CURRENCIES } from "@/lib/currencies"; // Import currency helper
 
 // Types
 interface QuoteItem {
@@ -41,6 +41,7 @@ interface Quotation {
   expiry_date?: string;
   grand_total: string;
   subtotal: string;
+  currency?: string; // Added currency field
   client: { 
     company_name: string;
     email?: string;
@@ -57,12 +58,15 @@ export default function QuotationListPage() {
   const [filteredQuotes, setFilteredQuotes] = useState<Quotation[]>([]);
   const [loading, setLoading] = useState(true);
   
-  // --- VIEW MODAL STATE (Kept for quick look) ---
+  // --- VIEW MODAL STATE ---
   const [selectedQuote, setSelectedQuote] = useState<Quotation | null>(null);
   const [isViewOpen, setIsViewOpen] = useState(false);
 
   // --- FILTER STATE ---
   const [searchTerm, setSearchTerm] = useState("");
+  
+  // Mutually Exclusive Date Logic
+  const [periodFilter, setPeriodFilter] = useState("ALL"); 
   const [dateRange, setDateRange] = useState<DateRange | undefined>();
 
   // --- 1. FETCH DATA ---
@@ -82,7 +86,34 @@ export default function QuotationListPage() {
     fetchData();
   }, []);
 
-  // --- 2. FILTER LOGIC ---
+  // --- 2. CALCULATE FINANCIAL YEARS ---
+  const availableFYs = useMemo(() => {
+      const years = new Set<number>();
+      const currentYear = new Date().getFullYear();
+      years.add(currentYear);
+      
+      quotes.forEach(q => {
+          const d = new Date(q.issue_date);
+          const month = d.getMonth();
+          const year = d.getFullYear();
+          // FY Logic: If Jan-Mar (0-2), it belongs to previous year's FY start
+          years.add(month < 3 ? year - 1 : year);
+      });
+      return Array.from(years).sort((a, b) => b - a);
+  }, [quotes]);
+
+  // --- 3. FILTER HANDLERS (Mutually Exclusive) ---
+  const handlePeriodChange = (val: string) => {
+      setPeriodFilter(val);
+      setDateRange(undefined); // Clear Range when Preset is chosen
+  };
+
+  const handleDateRangeSelect = (range: DateRange | undefined) => {
+      setDateRange(range);
+      if(range) setPeriodFilter("CUSTOM"); // Clear Preset when Range is chosen
+  };
+
+  // --- 4. FILTER LOGIC ---
   useEffect(() => {
     let temp = quotes;
 
@@ -94,20 +125,40 @@ export default function QuotationListPage() {
             q.client.company_name.toLowerCase().includes(lower)
         );
     }
-    // Date Range (Calendar)
+
+    // Date Logic (Mutually Exclusive)
+    const now = new Date();
+    let start: Date | null = null;
+    let end: Date | null = endOfDay(now);
+
     if (dateRange?.from) {
-        temp = temp.filter(q => {
-            const date = new Date(q.issue_date);
-            const start = startOfDay(dateRange.from!);
-            const end = dateRange.to ? endOfDay(dateRange.to) : endOfDay(dateRange.from!);
-            return isWithinInterval(date, { start, end });
-        });
+        // CASE 1: Custom Range
+        start = startOfDay(dateRange.from);
+        end = dateRange.to ? endOfDay(dateRange.to) : endOfDay(dateRange.from);
+    } else if (periodFilter !== "CUSTOM" && periodFilter !== "ALL") {
+        // CASE 2: Preset Period
+        if (periodFilter.startsWith("FY-")) {
+            const startYear = parseInt(periodFilter.split("-")[1]);
+            start = new Date(startYear, 3, 1); // April 1st
+            end = new Date(startYear + 1, 2, 31, 23, 59, 59); // March 31st next year
+        } else {
+             switch (periodFilter) {
+                case 'monthly': start = startOfMonth(now); break;
+                case 'quarterly': start = startOfQuarter(now); break;
+                case 'yearly': start = startOfYear(now); break;
+            }
+        }
+    }
+
+    // Apply Date Filter if Start/End are set
+    if (start && end) {
+        temp = temp.filter(q => isWithinInterval(new Date(q.issue_date), { start, end: end! }));
     }
 
     setFilteredQuotes(temp);
-  }, [quotes, searchTerm, dateRange]);
+  }, [quotes, searchTerm, periodFilter, dateRange]);
 
-  // --- 3. ACTIONS ---
+  // --- 5. ACTIONS ---
 
   const handleDelete = async (id: number) => {
       if (!confirm("Delete this quotation?")) return;
@@ -129,8 +180,13 @@ export default function QuotationListPage() {
       setIsViewOpen(true);
   };
 
-  const formatCurrency = (amount: number | string) => {
-      return new Intl.NumberFormat('en-IN', { style: 'currency', currency: 'INR' }).format(Number(amount));
+  // UPDATED: Dynamic Currency Formatting
+  const formatCurrency = (amount: number | string, currencyCode: string = "INR") => {
+      const selectedCurr = AVAILABLE_CURRENCIES.find(c => c.code === currencyCode);
+      return new Intl.NumberFormat(selectedCurr?.locale || 'en-IN', { 
+          style: 'currency', 
+          currency: currencyCode 
+      }).format(Number(amount));
   };
 
   return (
@@ -152,7 +208,7 @@ export default function QuotationListPage() {
       </div>
 
       {/* FILTERS BAR */}
-      <div className="flex flex-col md:flex-row gap-4 bg-card p-4 rounded-xl border border-border shadow-sm">
+      <div className="flex flex-col xl:flex-row gap-4 bg-card p-4 rounded-xl border border-border shadow-sm">
           {/* Search */}
           <div className="relative flex-1">
               <Search className="absolute left-3 top-2.5 h-4 w-4 text-muted-foreground" />
@@ -164,17 +220,35 @@ export default function QuotationListPage() {
               />
           </div>
           
-          {/* Date Range Picker */}
-          <div className="flex items-center gap-2">
+          <div className="flex flex-wrap items-center gap-2">
+             {/* PRESET SELECTOR */}
+             <Select value={periodFilter} onValueChange={handlePeriodChange}>
+                <SelectTrigger className="w-[150px]">
+                    <SelectValue placeholder="Period" />
+                </SelectTrigger>
+                <SelectContent>
+                    <SelectItem value="ALL">All Time</SelectItem>
+                    <SelectItem value="monthly">This Month</SelectItem>
+                    <SelectItem value="quarterly">This Quarter</SelectItem>
+                    <SelectItem value="yearly">This Year</SelectItem>
+                    {availableFYs.map(year => (
+                        <SelectItem key={year} value={`FY-${year}`}>FY {year}-{year.toString().slice(-2) === '99' ? '00' : (year+1).toString().slice(-2)}</SelectItem>
+                    ))}
+                </SelectContent>
+             </Select>
+
+             <span className="text-muted-foreground text-xs font-bold uppercase px-1">OR</span>
+
+             {/* DATE RANGE PICKER */}
              <Popover>
                 <PopoverTrigger asChild>
                     <Button variant="outline" className={cn("w-[240px] justify-start text-left font-normal", !dateRange && "text-muted-foreground")}>
                         <CalendarIcon className="mr-2 h-4 w-4" />
                         {dateRange?.from ? (
                             dateRange.to ? (
-                                <>{format(dateRange.from, "LLL dd, y")} - {format(dateRange.to, "LLL dd, y")}</>
-                            ) : format(dateRange.from, "LLL dd, y")
-                        ) : <span>Pick a date range</span>}
+                                <>{format(dateRange.from, "LLL dd")} - {format(dateRange.to, "LLL dd")}</>
+                            ) : format(dateRange.from, "LLL dd")
+                        ) : <span>Custom Range</span>}
                     </Button>
                 </PopoverTrigger>
                 <PopoverContent className="w-auto p-0" align="end">
@@ -183,13 +257,15 @@ export default function QuotationListPage() {
                         mode="range"
                         defaultMonth={dateRange?.from}
                         selected={dateRange}
-                        onSelect={setDateRange}
+                        onSelect={handleDateRangeSelect}
                         numberOfMonths={2}
                     />
                 </PopoverContent>
              </Popover>
-             {dateRange && (
-                 <Button variant="ghost" size="icon" onClick={() => setDateRange(undefined)} title="Clear Date Filter">
+             
+             {/* Clear Button */}
+             {(dateRange || periodFilter !== 'ALL') && (
+                 <Button variant="ghost" size="icon" onClick={() => handlePeriodChange('ALL')} title="Clear Filters">
                      <X className="w-4 h-4" />
                  </Button>
              )}
@@ -225,7 +301,10 @@ export default function QuotationListPage() {
                     <TableCell className="font-bold text-foreground font-mono">{q.quotation_number}</TableCell>
                     <TableCell className="font-medium text-muted-foreground">{q.client?.company_name}</TableCell>
                     <TableCell>{format(new Date(q.issue_date), "dd MMM yyyy")}</TableCell>
-                    <TableCell className="font-bold text-foreground">{formatCurrency(q.grand_total)}</TableCell>
+                    <TableCell className="font-bold text-foreground">
+                        {/* Pass the currency code here */}
+                        {formatCurrency(q.grand_total, q.currency)}
+                    </TableCell>
                     
                     <TableCell className="text-right">
                        <div className="flex justify-end items-center gap-1">
@@ -254,7 +333,7 @@ export default function QuotationListPage() {
         </CardContent>
       </Card>
 
-      {/* === VIEW ONLY MODAL (PRESERVED) === */}
+      {/* === VIEW ONLY MODAL === */}
       <Dialog open={isViewOpen} onOpenChange={setIsViewOpen}>
         <DialogContent className="max-w-4xl max-h-[90vh] overflow-y-auto bg-card border-border shadow-2xl">
             <DialogHeader>
@@ -275,7 +354,12 @@ export default function QuotationListPage() {
                     <div className="grid grid-cols-2 md:grid-cols-4 gap-4 p-4 bg-muted/30 rounded-xl border border-border/50">
                         <div><p className="text-xs font-semibold text-muted-foreground uppercase">Client</p><p className="text-sm font-bold mt-1">{selectedQuote.client.company_name}</p></div>
                         <div><p className="text-xs font-semibold text-muted-foreground uppercase">Contact</p><p className="text-sm mt-1">{selectedQuote.client.phone || "—"}</p><p className="text-sm mt-1">{selectedQuote.client.email || "—"}</p></div>
-                        <div><p className="text-xs font-semibold text-muted-foreground uppercase">Total</p><p className="text-sm mt-1 font-bold text-primary">{formatCurrency(selectedQuote.grand_total)}</p></div>
+                        <div>
+                            <p className="text-xs font-semibold text-muted-foreground uppercase">Total</p>
+                            <p className="text-sm mt-1 font-bold text-primary">
+                                {formatCurrency(selectedQuote.grand_total, selectedQuote.currency)}
+                            </p>
+                        </div>
                     </div>
                     
                     <div>
@@ -295,8 +379,12 @@ export default function QuotationListPage() {
                                         <TableRow key={idx}>
                                             <TableCell className="font-medium">{item.description}</TableCell>
                                             <TableCell className="text-right">{item.quantity}</TableCell>
-                                            <TableCell className="text-right">{formatCurrency(item.rate)}</TableCell>
-                                            <TableCell className="text-right font-bold">{formatCurrency(item.amount)}</TableCell>
+                                            <TableCell className="text-right">
+                                                {formatCurrency(item.rate, selectedQuote.currency)}
+                                            </TableCell>
+                                            <TableCell className="text-right font-bold">
+                                                {formatCurrency(item.amount, selectedQuote.currency)}
+                                            </TableCell>
                                         </TableRow>
                                     ))}
                                 </TableBody>

@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useState, useMemo } from 'react';
 import api from "@/lib/api";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -17,14 +17,20 @@ import {
   Loader2, Eye, Pencil, Search, Filter, Calendar as CalendarIcon, X, Share2, Trash2
 } from "lucide-react";
 import Link from "next/link";
-import { format, isWithinInterval, startOfDay, endOfDay } from "date-fns";
+import { 
+  format, isWithinInterval, startOfDay, endOfDay,
+  startOfMonth, startOfQuarter, startOfYear
+} from "date-fns";
 import { useRouter } from 'next/navigation';
 import { Calendar } from "@/components/ui/calendar";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
+import { 
+  Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter 
+} from "@/components/ui/dialog";
+import { Label } from "@/components/ui/label";
 import { cn } from "@/lib/utils";
 import { DateRange } from "react-day-picker";
 import { useToast } from "@/components/ui/toast-context";
-import { AVAILABLE_CURRENCIES } from "@/lib/currencies"; // <--- 1. ADD IMPORT
 
 interface Invoice {
   id: number;
@@ -32,8 +38,10 @@ interface Invoice {
   issue_date: string;
   grand_total: string;
   status: string;
+  // --- ADDED CURRENCY FIELDS ---
   currency?: string;
   exchange_rate?: number;
+  // -----------------------------
   client: {
     company_name: string;
     email?: string;
@@ -48,21 +56,20 @@ export default function InvoiceListPage() {
   const [loading, setLoading] = useState(true);
   const [actionLoadingId, setActionLoadingId] = useState<number | null>(null);
 
-  // Filters
+  // --- FILTER STATE ---
   const [searchTerm, setSearchTerm] = useState("");
   const [statusFilter, setStatusFilter] = useState("ALL");
+  
+  // Mutually Exclusive Date Logic
+  const [periodFilter, setPeriodFilter] = useState("ALL");
   const [dateRange, setDateRange] = useState<DateRange | undefined>();
 
-  // --- 2. ADD HELPER FUNCTION ---
-  const formatMoney = (amount: number, currencyCode: string = "INR") => {
-      const selectedCurr = AVAILABLE_CURRENCIES.find(c => c.code === currencyCode);
-      return new Intl.NumberFormat(selectedCurr?.locale || 'en-IN', { 
-          style: 'currency', 
-          currency: currencyCode,
-          minimumFractionDigits: 2
-      }).format(amount);
-  };
+  // --- PAYMENT DIALOG STATE ---
+  const [isPayDialogOpen, setIsPayDialogOpen] = useState(false);
+  const [payDate, setPayDate] = useState<Date | undefined>(new Date());
+  const [invoiceToPay, setInvoiceToPay] = useState<number | null>(null);
 
+  // --- 1. LOAD DATA ---
   useEffect(() => {
     const fetchInvoices = async () => {
       try {
@@ -79,13 +86,47 @@ export default function InvoiceListPage() {
     fetchInvoices();
   }, []);
 
-  // ... (rest of the component logic remains the same)
+  // --- 2. CALCULATE FINANCIAL YEARS ---
+  const availableFYs = useMemo(() => {
+      const years = new Set<number>();
+      const currentYear = new Date().getFullYear();
+      years.add(currentYear);
+      
+      invoices.forEach(inv => {
+          const d = new Date(inv.issue_date);
+          const month = d.getMonth();
+          const year = d.getFullYear();
+          // FY Logic: If Jan-Mar (0-2), it belongs to previous year's FY start
+          years.add(month < 3 ? year - 1 : year);
+      });
+      return Array.from(years).sort((a, b) => b - a);
+  }, [invoices]);
 
-  // Filtering Logic
+  // --- 3. FILTER HANDLERS (Mutually Exclusive) ---
+  const handlePeriodChange = (val: string) => {
+      setPeriodFilter(val);
+      setDateRange(undefined); // Clear Range when Preset is chosen
+  };
+
+  const handleDateRangeSelect = (range: DateRange | undefined) => {
+      setDateRange(range);
+      if(range) setPeriodFilter("CUSTOM"); // Clear Preset when Range is chosen
+  };
+
+  // --- Helper: Format Currency correctly ---
+  const formatMoney = (amount: number, currency: string) => {
+    return new Intl.NumberFormat('en-IN', {
+      style: 'currency',
+      currency: currency || 'INR',
+      minimumFractionDigits: 2,
+    }).format(amount);
+  };
+
+  // --- 4. FILTERING LOGIC ---
   useEffect(() => {
     let temp = invoices;
 
-    // 1. Search
+    // A. Search
     if (searchTerm) {
         const lower = searchTerm.toLowerCase();
         temp = temp.filter(inv => 
@@ -94,25 +135,43 @@ export default function InvoiceListPage() {
         );
     }
 
-    // 2. Status
+    // B. Status
     if (statusFilter !== "ALL") {
         temp = temp.filter(inv => inv.status === statusFilter);
     }
 
-    // 3. Date Range (Calendar)
+    // C. Date Filter (Mutually Exclusive)
+    const now = new Date();
+    let start: Date | null = null;
+    let end: Date | null = endOfDay(now);
+
     if (dateRange?.from) {
-        temp = temp.filter(inv => {
-            const date = new Date(inv.issue_date);
-            const start = startOfDay(dateRange.from!);
-            const end = dateRange.to ? endOfDay(dateRange.to) : endOfDay(dateRange.from!);
-            return isWithinInterval(date, { start, end });
-        });
+        // CASE 1: Custom Range
+        start = startOfDay(dateRange.from);
+        end = dateRange.to ? endOfDay(dateRange.to) : endOfDay(dateRange.from);
+    } else if (periodFilter !== "CUSTOM" && periodFilter !== "ALL") {
+        // CASE 2: Preset Period
+        if (periodFilter.startsWith("FY-")) {
+            const startYear = parseInt(periodFilter.split("-")[1]);
+            start = new Date(startYear, 3, 1); // April 1st
+            end = new Date(startYear + 1, 2, 31, 23, 59, 59); // March 31st next year
+        } else {
+             switch (periodFilter) {
+                case 'monthly': start = startOfMonth(now); break;
+                case 'quarterly': start = startOfQuarter(now); break;
+                case 'yearly': start = startOfYear(now); break;
+            }
+        }
+    }
+
+    if (start && end) {
+        temp = temp.filter(inv => isWithinInterval(new Date(inv.issue_date), { start, end: end! }));
     }
 
     setFilteredInvoices(temp);
-  }, [invoices, searchTerm, statusFilter, dateRange]);
+  }, [invoices, searchTerm, statusFilter, periodFilter, dateRange]);
 
-  // --- HANDLERS ---
+  // --- ACTION HANDLERS ---
 
   const handleViewPdf = async (id: number) => {
     try {
@@ -174,6 +233,30 @@ export default function InvoiceListPage() {
     }
   };
 
+  const openPayDialog = (id: number) => {
+      setInvoiceToPay(id);
+      setPayDate(new Date()); 
+      setIsPayDialogOpen(true);
+  };
+
+  const handleConfirmPaid = async () => {
+      if (!invoiceToPay) return;
+      try {
+          await api.patch(`/invoices/${invoiceToPay}/status`, { 
+              status: 'PAID',
+              paymentDate: payDate 
+          });
+          
+          setInvoices(prev => prev.map(inv => inv.id === invoiceToPay ? { ...inv, status: 'PAID' } : inv));
+          toast("Invoice marked as Paid", "success");
+      } catch (e) {
+          toast("Failed to update status", "error");
+      } finally {
+          setIsPayDialogOpen(false);
+          setInvoiceToPay(null);
+      }
+  };
+
   const handleDelete = async (id: number) => {
       if (!confirm("Are you sure you want to delete this invoice? This action cannot be undone.")) return;
       try {
@@ -200,7 +283,9 @@ export default function InvoiceListPage() {
         </Link>
       </div>
 
-      <div className="flex flex-col md:flex-row gap-4 bg-card p-4 rounded-xl border border-border shadow-sm">
+      {/* FILTER BAR */}
+      <div className="flex flex-col xl:flex-row gap-4 bg-card p-4 rounded-xl border border-border shadow-sm">
+         {/* Search */}
          <div className="relative flex-1">
             <Search className="absolute left-3 top-2.5 h-4 w-4 text-muted-foreground" />
             <Input 
@@ -211,31 +296,50 @@ export default function InvoiceListPage() {
             />
          </div>
          
-         <Select value={statusFilter} onValueChange={setStatusFilter}>
-            <SelectTrigger className="w-[160px]">
-                <Filter className="w-4 h-4 mr-2 text-muted-foreground" />
-                <SelectValue placeholder="Status" />
-            </SelectTrigger>
-            <SelectContent>
-                <SelectItem value="ALL">All Status</SelectItem>
-                <SelectItem value="PAID">Paid</SelectItem>
-                <SelectItem value="SENT">Sent</SelectItem>
-                <SelectItem value="SHARED">Shared</SelectItem>
-                <SelectItem value="DRAFT">Draft</SelectItem>
-                <SelectItem value="OVERDUE">Overdue</SelectItem>
-            </SelectContent>
-         </Select>
+         <div className="flex flex-wrap items-center gap-2">
+            {/* Status Filter */}
+            <Select value={statusFilter} onValueChange={setStatusFilter}>
+                <SelectTrigger className="w-[140px]">
+                    <SelectValue placeholder="Status" />
+                </SelectTrigger>
+                <SelectContent>
+                    <SelectItem value="ALL">All Status</SelectItem>
+                    <SelectItem value="PAID">Paid</SelectItem>
+                    <SelectItem value="SENT">Sent</SelectItem>
+                    <SelectItem value="SHARED">Shared</SelectItem>
+                    <SelectItem value="DRAFT">Draft</SelectItem>
+                    <SelectItem value="OVERDUE">Overdue</SelectItem>
+                </SelectContent>
+            </Select>
 
-         <div className="flex items-center gap-2">
+            {/* PRESET SELECTOR (Month, Quarter, FY) */}
+            <Select value={periodFilter} onValueChange={handlePeriodChange}>
+                <SelectTrigger className="w-[150px]">
+                    <SelectValue placeholder="Period" />
+                </SelectTrigger>
+                <SelectContent>
+                    <SelectItem value="ALL">All Time</SelectItem>
+                    <SelectItem value="monthly">This Month</SelectItem>
+                    <SelectItem value="quarterly">This Quarter</SelectItem>
+                    <SelectItem value="yearly">This Year</SelectItem>
+                    {availableFYs.map(year => (
+                        <SelectItem key={year} value={`FY-${year}`}>FY {year}-{year.toString().slice(-2) === '99' ? '00' : (year+1).toString().slice(-2)}</SelectItem>
+                    ))}
+                </SelectContent>
+            </Select>
+
+            <span className="text-muted-foreground text-xs font-bold uppercase px-1">OR</span>
+
+            {/* DATE RANGE PICKER */}
              <Popover>
                 <PopoverTrigger asChild>
-                    <Button variant="outline" className={cn("w-[240px] justify-start text-left font-normal", !dateRange && "text-muted-foreground")}>
+                    <Button variant="outline" className={cn("w-[220px] justify-start text-left font-normal", !dateRange && "text-muted-foreground")}>
                         <CalendarIcon className="mr-2 h-4 w-4" />
                         {dateRange?.from ? (
                             dateRange.to ? (
-                                <>{format(dateRange.from, "LLL dd, y")} - {format(dateRange.to, "LLL dd, y")}</>
-                            ) : format(dateRange.from, "LLL dd, y")
-                        ) : <span>Pick a date range</span>}
+                                <>{format(dateRange.from, "LLL dd")} - {format(dateRange.to, "LLL dd")}</>
+                            ) : format(dateRange.from, "LLL dd")
+                        ) : <span>Custom Range</span>}
                     </Button>
                 </PopoverTrigger>
                 <PopoverContent className="w-auto p-0" align="end">
@@ -244,15 +348,22 @@ export default function InvoiceListPage() {
                         mode="range"
                         defaultMonth={dateRange?.from}
                         selected={dateRange}
-                        onSelect={setDateRange}
+                        onSelect={handleDateRangeSelect}
                         numberOfMonths={2}
                     />
                 </PopoverContent>
              </Popover>
-             {dateRange && <Button variant="ghost" size="icon" onClick={() => setDateRange(undefined)}><X className="w-4 h-4" /></Button>}
+
+             {/* Clear Filter Button */}
+             {(dateRange || periodFilter !== 'ALL') && (
+                 <Button variant="ghost" size="icon" onClick={() => handlePeriodChange('ALL')}>
+                    <X className="w-4 h-4" />
+                 </Button>
+             )}
          </div>
       </div>
 
+      {/* TABLE */}
       <Card className="shadow-horizon border-none bg-card">
         <CardHeader><CardTitle>Invoice List</CardTitle></CardHeader>
         <CardContent>
@@ -283,15 +394,16 @@ export default function InvoiceListPage() {
                     <TableCell className="text-muted-foreground font-medium">{inv.client?.company_name}</TableCell>
                     <TableCell>{format(new Date(inv.issue_date), "dd MMM yyyy")}</TableCell>
                     
+                    {/* --- CURRENCY AWARE AMOUNT COLUMN --- */}
                     <TableCell className="text-right">
                        <div className="flex flex-col items-end">
                            <span className="font-bold text-foreground">
-                               {/* Use the new helper function here */}
                                {formatMoney(Number(inv.grand_total), inv.currency || 'INR')}
                            </span>
+                           {/* Show Approximate Ledger Value if Foreign Currency */}
                            {inv.currency && inv.currency !== 'INR' && inv.exchange_rate && (
                                <span className="text-[10px] text-muted-foreground font-normal">
-                                   Ammount Recieved ≈ 
+                                   ≈ {formatMoney(Number(inv.grand_total) * Number(inv.exchange_rate), 'INR')}
                                </span>
                            )}
                        </div>
@@ -322,7 +434,7 @@ export default function InvoiceListPage() {
                               <DropdownMenuContent align="end">
                                 <DropdownMenuItem onClick={() => handleDownloadPdf(inv.id, inv.invoice_number)}>Download PDF</DropdownMenuItem>
                                 <DropdownMenuItem onClick={() => handleSendEmail(inv)}>Send Email</DropdownMenuItem>
-                                <DropdownMenuItem onClick={() => handleStatusChange(inv.id, 'PAID')}>Mark Paid</DropdownMenuItem>
+                                <DropdownMenuItem onClick={() => openPayDialog(inv.id)}>Mark Paid</DropdownMenuItem>
                                 <DropdownMenuItem onClick={() => handleStatusChange(inv.id, 'SHARED')}>Mark Shared</DropdownMenuItem>
                                 <DropdownMenuItem onClick={() => handleStatusChange(inv.id, 'DRAFT')}>Mark Draft</DropdownMenuItem>
                                 <DropdownMenuItem className="text-red-600 focus:text-red-600 focus:bg-red-50 dark:focus:bg-red-900/10" onClick={() => handleDelete(inv.id)}> Delete </DropdownMenuItem>
@@ -337,6 +449,36 @@ export default function InvoiceListPage() {
           )}
         </CardContent>
       </Card>
+
+      {/* MARK AS PAID DIALOG */}
+      <Dialog open={isPayDialogOpen} onOpenChange={setIsPayDialogOpen}>
+        <DialogContent className="sm:max-w-[425px]">
+          <DialogHeader>
+            <DialogTitle>Mark Invoice as Paid</DialogTitle>
+            <DialogDescription>
+              Select the date the payment was received.
+            </DialogDescription>
+          </DialogHeader>
+          <div className="grid gap-4 py-4">
+            <div className="flex flex-col space-y-2">
+                <Label>Payment Date</Label>
+                <div className="border rounded-md p-2 flex justify-center">
+                    <Calendar
+                        mode="single"
+                        selected={payDate}
+                        onSelect={setPayDate}
+                        initialFocus
+                    />
+                </div>
+            </div>
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setIsPayDialogOpen(false)}>Cancel</Button>
+            <Button onClick={handleConfirmPaid}>Confirm Payment</Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
     </div>
   );
 }
