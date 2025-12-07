@@ -8,12 +8,20 @@ import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
 import { Calendar } from "@/components/ui/calendar";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
 import { format } from "date-fns";
-import { CalendarIcon, Save, Loader2, ArrowLeft, User, Mail, Phone } from "lucide-react";
+import { CalendarIcon, Save, Loader2, ArrowLeft, Mail, Phone } from "lucide-react";
 import { QuotationItemsTable, QuoteItem } from "./quotation-items";
 import api from "@/lib/api"; 
 import Link from "next/link";
 import { useRouter } from 'next/navigation';
+import { AVAILABLE_CURRENCIES } from "@/lib/currencies";
 
 export default function NewQuotationPage() {
   const router = useRouter();
@@ -25,6 +33,8 @@ export default function NewQuotationPage() {
   const [clients, setClients] = useState<any[]>([]);
   const [selectedClientId, setSelectedClientId] = useState<string>("");
   const [selectedClient, setSelectedClient] = useState<any>(null); // Store full client obj
+  
+  const [currency, setCurrency] = useState<string>("INR");
   
   const [isSaving, setIsSaving] = useState(false);
 
@@ -60,6 +70,15 @@ export default function NewQuotationPage() {
     setGrandTotal(newSubtotal); // Quotations typically show raw estimates (Pre-Tax)
   }, [items]);
 
+  // Helper to format currency for display
+  const formatCurrency = (amount: number) => {
+    const selectedCurr = AVAILABLE_CURRENCIES.find(c => c.code === currency);
+    return new Intl.NumberFormat(selectedCurr?.locale || 'en-IN', { 
+        style: 'currency', 
+        currency: currency 
+    }).format(amount);
+  };
+
   // --- Save Handler ---
   const handleSave = async () => {
     if (!selectedClientId) return alert("Please select a Client.");
@@ -71,6 +90,7 @@ export default function NewQuotationPage() {
         clientId: Number(selectedClientId),
         issueDate: issueDate?.toISOString(),
         expiryDate: expiryDate?.toISOString(), // Optional
+        currency: currency, // Save the selected currency
         items: items,
         subtotal: subtotal,
         grandTotal: grandTotal,
@@ -84,7 +104,6 @@ export default function NewQuotationPage() {
       const response = await api.post('/quotations', payload);
       
       // Success Feedback
-      // You can replace this alert with a Toast if you prefer
       alert(`Success! Quotation ${response.data.quotation_number} Created`);
       
       router.push('/quotations');
@@ -166,6 +185,24 @@ export default function NewQuotationPage() {
                         <Label>Quotation No</Label>
                         <Input value="Auto-generated" disabled className="bg-slate-50 dark:bg-slate-900/50 font-mono text-muted-foreground" />
                     </div>
+                    
+                    {/* Currency Selector */}
+                    <div className="space-y-2">
+                        <Label>Currency</Label>
+                        <Select value={currency} onValueChange={setCurrency}>
+                          <SelectTrigger>
+                            <SelectValue placeholder="Select Currency" />
+                          </SelectTrigger>
+                          <SelectContent>
+                            {AVAILABLE_CURRENCIES.map((c) => (
+                              <SelectItem key={c.code} value={c.code}>
+                                {c.code} - {c.name} ({c.symbol})
+                              </SelectItem>
+                            ))}
+                          </SelectContent>
+                        </Select>
+                    </div>
+
                     <div className="space-y-2 flex flex-col">
                         <Label>Issue Date</Label>
                         <Popover>
@@ -205,19 +242,19 @@ export default function NewQuotationPage() {
             <Card className="shadow-horizon border-none bg-card">
                 <CardHeader><CardTitle className="text-base">Bill of Quantities</CardTitle></CardHeader>
                 <CardContent className="p-6">
-                    {/* This component now has fixed widths and horizontal scroll if needed */}
-                    <QuotationItemsTable items={items} setItems={setItems} />
+                    {/* Pass currency to items table for correct symbol display */}
+                    <QuotationItemsTable items={items} setItems={setItems} currency={currency} />
                     
                     <div className="flex justify-end mt-6 pt-4 border-t">
                         <div className="text-right w-64">
                             <div className="flex justify-between items-center mb-1">
                                 <span className="text-muted-foreground text-sm">Subtotal</span>
-                                <span className="font-medium">{new Intl.NumberFormat('en-IN', { style: 'currency', currency: 'INR' }).format(subtotal)}</span>
+                                <span className="font-medium">{formatCurrency(subtotal)}</span>
                             </div>
                             <div className="flex justify-between items-center border-t pt-2 mt-2">
                                 <span className="font-bold text-lg text-foreground">Total Estimate</span>
                                 <span className="text-xl font-bold text-primary">
-                                    {new Intl.NumberFormat('en-IN', { style: 'currency', currency: 'INR' }).format(grandTotal)}
+                                    {formatCurrency(grandTotal)}
                                 </span>
                             </div>
                         </div>

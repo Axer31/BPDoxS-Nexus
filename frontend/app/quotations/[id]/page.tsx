@@ -8,12 +8,20 @@ import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea"; 
 import { Calendar } from "@/components/ui/calendar";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
 import { format } from "date-fns";
 import { CalendarIcon, Save, Loader2, ArrowLeft } from "lucide-react";
 import { QuotationItemsTable, QuoteItem } from "../new/quotation-items"; 
 import api from "@/lib/api"; 
 import Link from "next/link";
 import { useRouter, useParams } from 'next/navigation';
+import { AVAILABLE_CURRENCIES } from "@/lib/currencies";
 
 export default function EditQuotationPage() {
   const router = useRouter();
@@ -29,6 +37,7 @@ export default function EditQuotationPage() {
   
   const [clients, setClients] = useState<any[]>([]);
   const [selectedClientId, setSelectedClientId] = useState<string>("");
+  const [currency, setCurrency] = useState<string>("INR"); // Default currency
   
   const [items, setItems] = useState<QuoteItem[]>([]);
   
@@ -55,9 +64,9 @@ export default function EditQuotationPage() {
             setQuoteNumber(quote.quotation_number);
             setIssueDate(new Date(quote.issue_date));
             setSelectedClientId(quote.client_id.toString());
+            setCurrency(quote.currency || "INR"); // Load saved currency
             
             // Populate Items (Ensure type compatibility)
-            // Using JSON parse if line_items comes as string, or direct assignment if it's already an object
             const loadedItems = typeof quote.line_items === 'string' 
                 ? JSON.parse(quote.line_items) 
                 : quote.line_items;
@@ -85,6 +94,15 @@ export default function EditQuotationPage() {
     setGrandTotal(total);
   }, [items]);
 
+  // Helper to format currency for display
+  const formatCurrency = (amount: number) => {
+    const selectedCurr = AVAILABLE_CURRENCIES.find(c => c.code === currency);
+    return new Intl.NumberFormat(selectedCurr?.locale || 'en-IN', { 
+        style: 'currency', 
+        currency: currency 
+    }).format(amount);
+  };
+
   // --- 3. Update Handler ---
   const handleUpdate = async () => {
     setIsSaving(true);
@@ -92,8 +110,9 @@ export default function EditQuotationPage() {
         await api.put(`/quotations/${id}`, {
             clientId: Number(selectedClientId),
             issueDate: issueDate?.toISOString(),
+            currency, // Send updated currency
             items,
-            subtotal: grandTotal, // Quotations usually just have subtotal = grandtotal (no tax usually shown until invoice)
+            subtotal: grandTotal, 
             grandTotal,
             servicesOffered,
             contractTerms,
@@ -102,6 +121,7 @@ export default function EditQuotationPage() {
         alert("Quotation Updated Successfully");
         router.push('/quotations');
     } catch (e: any) {
+        console.error(e);
         alert(e.response?.data?.error || "Update failed");
     } finally {
         setIsSaving(false);
@@ -148,6 +168,23 @@ export default function EditQuotationPage() {
                     </select>
                 </div>
 
+                {/* Currency Selector */}
+                <div className="space-y-2">
+                    <Label>Currency</Label>
+                    <Select value={currency} onValueChange={setCurrency}>
+                      <SelectTrigger>
+                        <SelectValue placeholder="Select Currency" />
+                      </SelectTrigger>
+                      <SelectContent>
+                        {AVAILABLE_CURRENCIES.map((c) => (
+                          <SelectItem key={c.code} value={c.code}>
+                            {c.code} - {c.name} ({c.symbol})
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                </div>
+
                 <div className="space-y-2 flex flex-col">
                     <Label>Issue Date</Label>
                     <Popover>
@@ -171,7 +208,8 @@ export default function EditQuotationPage() {
                 
                 {/* ITEMS TABLE */}
                 <Label className="text-base font-semibold">Bill of Quantities</Label>
-                <QuotationItemsTable items={items} setItems={setItems} />
+                {/* Pass currency to table for row formatting */}
+                <QuotationItemsTable items={items} setItems={setItems} currency={currency} />
                 
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                     <div className="space-y-2">
@@ -197,7 +235,7 @@ export default function EditQuotationPage() {
                         <div className="flex justify-between font-bold text-lg text-primary">
                             <span>Total Estimate</span>
                             <span>
-                                {new Intl.NumberFormat('en-IN', { style: 'currency', currency: 'INR' }).format(grandTotal)}
+                                {formatCurrency(grandTotal)}
                             </span>
                         </div>
                     </div>

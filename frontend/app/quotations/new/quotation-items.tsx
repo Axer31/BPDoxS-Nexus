@@ -26,7 +26,10 @@ const HSN_CODES = ["998313", "998314", "998315", "998316", "998319"];
 export function QuotationItemsTable({ items, setItems, currency = "INR" }: QuotationItemsProps) {
 
   const addItem = () => {
-    setItems([...items, { id: Date.now(), description: "", hsn: "", quantity: 1, rate: 0, amount: 0 }]);
+    setItems([
+      ...items, 
+      { id: Date.now(), description: "", hsn: "", quantity: 1, rate: 0, amount: 0 }
+    ]);
   };
 
   const removeItem = (id: number) => {
@@ -37,6 +40,7 @@ export function QuotationItemsTable({ items, setItems, currency = "INR" }: Quota
     const newItems = items.map((item) => {
       if (item.id === id) {
         const updatedItem = { ...item, [field]: value };
+        // Recalculate amount if quantity or rate changes
         if (field === "quantity" || field === "rate") {
             updatedItem.amount = Number(updatedItem.quantity) * Number(updatedItem.rate);
         }
@@ -45,6 +49,15 @@ export function QuotationItemsTable({ items, setItems, currency = "INR" }: Quota
       return item;
     });
     setItems(newItems);
+  };
+
+  // Helper for consistent currency formatting
+  const formatMoney = (amount: number) => {
+    return new Intl.NumberFormat('en-IN', {
+        style: 'currency',
+        currency: currency,
+        minimumFractionDigits: 2
+    }).format(amount);
   };
 
   return (
@@ -100,7 +113,7 @@ export function QuotationItemsTable({ items, setItems, currency = "INR" }: Quota
                   />
                 </TableCell>
                 <TableCell className="p-2 text-right font-bold text-sm text-primary">
-                  {new Intl.NumberFormat('en-IN', { style: 'currency', currency: currency }).format(item.amount)}
+                  {formatMoney(item.amount)}
                 </TableCell>
                 <TableCell className="p-2 text-center">
                   <Button variant="ghost" size="icon" className="h-8 w-8 text-red-500 hover:bg-red-50" onClick={() => removeItem(item.id)}>

@@ -64,7 +64,7 @@ export class QuotationService {
       }
       // ---------------------------------------------
 
-      // Fetch Format Setting (Updated Default to match request)
+      // Fetch Format Setting
       const setting = await tx.systemSetting.findUnique({ where: { key: 'DOCUMENT_SETTINGS' } });
       const format = (setting?.json_value as any)?.quotation_format || "Q/{CC}{FY}/{SEQ:3}";
 
@@ -111,7 +111,7 @@ export class QuotationService {
           remarks: data.remarks,
           subtotal: data.subtotal,
           grand_total: data.grandTotal,
-          currency: data.currency || 'INR',
+          currency: data.currency || 'INR', // Save Currency
           bank_account_id: data.bankAccountId
         }
       });
@@ -132,6 +132,8 @@ export class QuotationService {
         remarks: data.remarks,
         subtotal: data.subtotal,
         grand_total: data.grandTotal,
+        currency: data.currency, // Allow update
+        bank_account_id: data.bankAccountId
       }
     });
   }
