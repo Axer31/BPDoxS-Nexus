@@ -12,7 +12,7 @@ import {
   ArrowDownLeft, ArrowUpRight, Download, Loader2, FileSpreadsheet, Filter 
 } from "lucide-react";
 import { 
-  format, startOfMonth, startOfQuarter, startOfYear, subMonths, 
+  format, startOfMonth, endOfMonth, startOfQuarter, endOfQuarter, startOfYear, endOfYear, subMonths, 
   isWithinInterval, endOfDay, startOfDay, getYear, getMonth 
 } from "date-fns";
 import { ScrollArea } from "@/components/ui/scroll-area";
@@ -65,7 +65,7 @@ export default function LedgerPage() {
   const getDateRangeForFilter = (filter: string) => {
     const now = new Date();
     let start: Date | null = null;
-    let end: Date | null = endOfDay(now);
+    let end: Date | null = null; // Default to null for "All Time"
 
     if (filter.startsWith("FY-")) {
         const startYear = parseInt(filter.split("-")[1]);
@@ -75,18 +75,23 @@ export default function LedgerPage() {
         switch(filter) {
             case 'daily': 
                 start = startOfDay(now); 
+                end = endOfDay(now);
                 break;
             case 'monthly': 
                 start = startOfMonth(now); 
+                end = endOfMonth(now); // FIXED: Covers entire month
                 break;
             case 'quarterly': 
                 start = startOfQuarter(now); 
+                end = endOfQuarter(now); // FIXED: Covers entire quarter
                 break;
             case 'semi-annually': 
                 start = subMonths(now, 6); 
+                end = endOfDay(now); // "Last 6 Months" implies up to today
                 break;
             case 'yearly': 
                 start = startOfYear(now); 
+                end = endOfYear(now); // FIXED: Covers entire year
                 break;
             case 'all': 
                 start = null; 
@@ -104,7 +109,7 @@ export default function LedgerPage() {
     const { start, end } = getDateRangeForFilter(timeRange);
 
     const filtered = allTransactions.filter(t => {
-        // If "All Time"
+        // If "All Time" (start/end are null)
         if (!start || !end) return true;
         
         const d = new Date(t.date);
