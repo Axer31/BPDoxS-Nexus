@@ -281,13 +281,8 @@ export default function QuotationListPage() {
                 <div className="space-y-8 py-4">
                     <div className="grid grid-cols-2 md:grid-cols-4 gap-4 p-4 bg-muted/30 rounded-xl border border-border/50">
                         <div><p className="text-xs font-semibold text-muted-foreground uppercase">Client</p><p className="text-sm font-bold mt-1">{selectedQuote.client.company_name}</p></div>
-                        <div><p className="text-xs font-semibold text-muted-foreground uppercase">Contact</p><p className="text-sm mt-1">{selectedQuote.client.phone || "—"}</p><p className="text-sm mt-1">{selectedQuote.client.email || "—"}</p></div>
-                        <div>
-                            <p className="text-xs font-semibold text-muted-foreground uppercase">Total</p>
-                            <p className="text-sm mt-1 font-bold text-primary">
-                                {formatCurrency(selectedQuote.grand_total, selectedQuote.currency)}
-                            </p>
-                        </div>
+                        <div><p className="text-xs font-semibold text-muted-foreground uppercase">Contact</p><p className="text-sm mt-1">{selectedQuote.client.phone || "—"}</p></div>
+                        <div><p className="text-xs font-semibold text-muted-foreground uppercase">Total</p><p className="text-sm mt-1 font-bold text-primary">{formatCurrency(selectedQuote.grand_total)}</p></div>
                     </div>
                     
                     <div>

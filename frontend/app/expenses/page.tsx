@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useEffect, useState, useMemo } from 'react';
+import React, { useEffect, useState } from 'react';
 import api from "@/lib/api";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
@@ -9,18 +9,14 @@ import { Button } from "@/components/ui/button";
 import { 
   Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger, DialogFooter 
 } from "@/components/ui/dialog";
-import { 
-  Select, SelectContent, SelectItem, SelectTrigger, SelectValue 
-} from "@/components/ui/select";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
-import { Plus, Trash2, Wallet, Calendar as CalendarIcon, Loader2, Search, PenLine, ListFilter, Filter } from "lucide-react";
-import { 
-  format, isWithinInterval, startOfDay, endOfDay, 
-  startOfMonth, startOfQuarter, startOfYear, subMonths 
-} from "date-fns";
+import { Plus, Trash2, Wallet, Calendar as CalendarIcon, Loader2, Search, X } from "lucide-react";
+import { format, isWithinInterval, startOfDay, endOfDay } from "date-fns";
 import { Calendar } from "@/components/ui/calendar";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { Textarea } from "@/components/ui/textarea";
+import { DateRange } from "react-day-picker";
+import { cn } from "@/lib/utils";
 
 export default function ExpensesPage() {
   const [expenses, setExpenses] = useState<any[]>([]);
@@ -29,15 +25,11 @@ export default function ExpensesPage() {
   
   // --- FILTER STATE ---
   const [searchTerm, setSearchTerm] = useState("");
-  const [timeRange, setTimeRange] = useState("monthly"); // Default: This Month
+  const [dateRange, setDateRange] = useState<DateRange | undefined>();
 
   // --- CREATE FORM STATE ---
   const [isDialogOpen, setIsDialogOpen] = useState(false);
   const [isSaving, setIsSaving] = useState(false);
-  
-  // Category Mode (Select vs Input)
-  const [isCustomCategory, setIsCustomCategory] = useState(false); 
-  
   const [formData, setFormData] = useState({
     category: '',
     amount: '',
@@ -62,18 +54,11 @@ export default function ExpensesPage() {
     loadExpenses();
   }, []);
 
-  // --- 2. DERIVE CATEGORIES ---
-  // Extract unique categories from existing expenses for the dropdown
-  const existingCategories = useMemo(() => {
-      const cats = new Set(expenses.map(e => e.category).filter(Boolean));
-      return Array.from(cats).sort();
-  }, [expenses]);
-
-  // --- 3. FILTER LOGIC ---
+  // --- 2. FILTER LOGIC ---
   useEffect(() => {
     let temp = expenses;
 
-    // A. Search Filter
+    // Search
     if (searchTerm) {
         const lower = searchTerm.toLowerCase();
         temp = temp.filter(e => 
@@ -82,31 +67,20 @@ export default function ExpensesPage() {
         );
     }
 
-    // B. Time Range Filter
-    const now = new Date();
-    let start: Date | null = null;
-    let end: Date = endOfDay(now);
-
-    switch (timeRange) {
-        case 'daily': start = startOfDay(now); break;
-        case 'monthly': start = startOfMonth(now); break;
-        case 'quarterly': start = startOfQuarter(now); break;
-        case 'semi-annually': start = subMonths(now, 6); break;
-        case 'yearly': start = startOfYear(now); break;
-        case 'all': start = null; break;
-    }
-
-    if (start) {
+    // Date Range Filter
+    if (dateRange?.from) {
         temp = temp.filter(e => {
             const date = new Date(e.date);
+            const start = startOfDay(dateRange.from!);
+            const end = dateRange.to ? endOfDay(dateRange.to) : endOfDay(dateRange.from!);
             return isWithinInterval(date, { start, end });
         });
     }
 
     setFilteredExpenses(temp);
-  }, [expenses, searchTerm, timeRange]);
+  }, [expenses, searchTerm, dateRange]);
 
-  // --- 4. ACTIONS ---
+  // --- 3. ACTIONS ---
   const handleSubmit = async () => {
     if (!formData.category || !formData.amount) return alert("Category and Amount are required");
     
@@ -119,8 +93,7 @@ export default function ExpensesPage() {
         });
         setIsDialogOpen(false);
         // Reset Form
-        setFormData({ category: '', amount: '', date: new Date(), description: '' });
-        setIsCustomCategory(false); // Reset mode
+        setFormData({ category: '', amount: '', date: new Date(), description: '' }); 
         loadExpenses(); 
     } catch (e) {
         alert("Failed to save expense");
@@ -140,14 +113,6 @@ export default function ExpensesPage() {
     }
   };
 
-  // Helper to open dialog and set defaults
-  const openNewExpenseDialog = () => {
-      // If we have categories, default to Select mode. If none, default to Input mode.
-      setIsCustomCategory(existingCategories.length === 0);
-      setFormData({ category: '', amount: '', date: new Date(), description: '' });
-      setIsDialogOpen(true);
-  }
-
   // Dynamic Total
   const totalExpense = filteredExpenses.reduce((sum, item) => sum + Number(item.amount), 0);
 
@@ -163,10 +128,7 @@ export default function ExpensesPage() {
         
         <Dialog open={isDialogOpen} onOpenChange={setIsDialogOpen}>
             <DialogTrigger asChild>
-                <Button 
-                    onClick={openNewExpenseDialog}
-                    className="bg-primary text-primary-foreground hover:bg-primary/90 shadow-lg shadow-primary/20"
-                >
+                <Button className="bg-primary text-primary-foreground hover:bg-primary/90 shadow-lg shadow-primary/20">
                     <Plus className="w-4 h-4 mr-2" /> Record Expense
                 </Button>
             </DialogTrigger>
@@ -175,55 +137,15 @@ export default function ExpensesPage() {
                     <DialogTitle>Add New Expense</DialogTitle>
                 </DialogHeader>
                 <div className="grid gap-4 py-4">
-                    
-                    {/* CATEGORY SELECTION */}
-                    <div className="space-y-2">
-                        <div className="flex items-center justify-between">
+                    <div className="grid grid-cols-2 gap-4">
+                        <div className="space-y-2">
                             <Label>Category</Label>
-                            {/* Toggle Button */}
-                            <Button 
-                                variant="ghost" 
-                                size="sm" 
-                                className="h-6 text-xs text-primary hover:text-primary/80"
-                                onClick={() => {
-                                    setIsCustomCategory(!isCustomCategory);
-                                    setFormData({...formData, category: ''}); // Clear on toggle
-                                }}
-                            >
-                                {isCustomCategory ? (
-                                    <><ListFilter className="w-3 h-3 mr-1"/> Select Existing</>
-                                ) : (
-                                    <><PenLine className="w-3 h-3 mr-1"/> Create New</>
-                                )}
-                            </Button>
-                        </div>
-
-                        {isCustomCategory || existingCategories.length === 0 ? (
                             <Input 
-                                placeholder="Type new category (e.g. Travel)" 
+                                placeholder="e.g. Server, Rent" 
                                 value={formData.category} 
                                 onChange={(e) => setFormData({...formData, category: e.target.value})} 
-                                autoFocus
                             />
-                        ) : (
-                            <Select 
-                                value={formData.category} 
-                                onValueChange={(val) => setFormData({...formData, category: val})}
-                            >
-                                <SelectTrigger>
-                                    <SelectValue placeholder="Select a category" />
-                                </SelectTrigger>
-                                <SelectContent>
-                                    {existingCategories.map((cat) => (
-                                        <SelectItem key={cat} value={cat}>{cat}</SelectItem>
-                                    ))}
-                                </SelectContent>
-                            </Select>
-                        )}
-                    </div>
-
-                    <div className="grid grid-cols-2 gap-4">
-                        {/* AMOUNT */}
+                        </div>
                         <div className="space-y-2">
                             <Label>Amount</Label>
                             <Input 
@@ -233,27 +155,26 @@ export default function ExpensesPage() {
                                 onChange={(e) => setFormData({...formData, amount: e.target.value})} 
                             />
                         </div>
-
-                        {/* DATE */}
-                        <div className="space-y-2 flex flex-col">
-                            <Label>Date</Label>
-                            <Popover>
-                                <PopoverTrigger asChild>
-                                    <Button variant={"outline"} className="w-full pl-3 text-left font-normal">
-                                        {formData.date ? format(formData.date, "PPP") : <span>Pick a date</span>}
-                                        <CalendarIcon className="ml-auto h-4 w-4 opacity-50" />
-                                    </Button>
-                                </PopoverTrigger>
-                                <PopoverContent className="w-auto p-0" align="start">
-                                    <Calendar 
-                                        mode="single" 
-                                        selected={formData.date} 
-                                        onSelect={(date) => date && setFormData({...formData, date})} 
-                                        initialFocus 
-                                    />
-                                </PopoverContent>
-                            </Popover>
-                        </div>
+                    </div>
+                    
+                    <div className="space-y-2 flex flex-col">
+                        <Label>Date</Label>
+                        <Popover>
+                            <PopoverTrigger asChild>
+                                <Button variant={"outline"} className="w-full pl-3 text-left font-normal">
+                                    {formData.date ? format(formData.date, "PPP") : <span>Pick a date</span>}
+                                    <CalendarIcon className="ml-auto h-4 w-4 opacity-50" />
+                                </Button>
+                            </PopoverTrigger>
+                            <PopoverContent className="w-auto p-0" align="start">
+                                <Calendar 
+                                    mode="single" 
+                                    selected={formData.date} 
+                                    onSelect={(date) => date && setFormData({...formData, date})} 
+                                    initialFocus 
+                                />
+                            </PopoverContent>
+                        </Popover>
                     </div>
 
                     <div className="space-y-2">
@@ -287,8 +208,8 @@ export default function ExpensesPage() {
                 <div className="text-2xl font-bold text-foreground">
                     {new Intl.NumberFormat('en-IN', { style: 'currency', currency: 'INR', maximumFractionDigits: 0 }).format(totalExpense)}
                 </div>
-                <p className="text-xs text-muted-foreground mt-1 capitalize">
-                   {timeRange === 'all' ? 'All Time' : timeRange}
+                <p className="text-xs text-muted-foreground mt-1">
+                   {dateRange ? 'Selected Period' : 'All Time'}
                 </p>
             </CardContent>
         </Card>
@@ -307,24 +228,35 @@ export default function ExpensesPage() {
                     />
                 </div>
 
-                {/* Time Range Selector */}
+                {/* Date Range Picker */}
                 <div className="flex items-center gap-2">
-                    <div className="w-[180px]">
-                        <Select value={timeRange} onValueChange={setTimeRange}>
-                            <SelectTrigger>
-                                <Filter className="w-4 h-4 mr-2 text-muted-foreground" />
-                                <SelectValue placeholder="Filter" />
-                            </SelectTrigger>
-                            <SelectContent>
-                                <SelectItem value="daily">Daily (Today)</SelectItem>
-                                <SelectItem value="monthly">This Month</SelectItem>
-                                <SelectItem value="quarterly">This Quarter</SelectItem>
-                                <SelectItem value="semi-annually">Semi-Annually</SelectItem>
-                                <SelectItem value="yearly">This Year</SelectItem>
-                                <SelectItem value="all">All Time</SelectItem>
-                            </SelectContent>
-                        </Select>
-                    </div>
+                    <Popover>
+                        <PopoverTrigger asChild>
+                            <Button variant="outline" className={cn("w-[240px] justify-start text-left font-normal", !dateRange && "text-muted-foreground")}>
+                                <CalendarIcon className="mr-2 h-4 w-4" />
+                                {dateRange?.from ? (
+                                    dateRange.to ? (
+                                        <>{format(dateRange.from, "LLL dd, y")} - {format(dateRange.to, "LLL dd, y")}</>
+                                    ) : format(dateRange.from, "LLL dd, y")
+                                ) : <span>Pick a date range</span>}
+                            </Button>
+                        </PopoverTrigger>
+                        <PopoverContent className="w-auto p-0" align="end">
+                            <Calendar
+                                initialFocus
+                                mode="range"
+                                defaultMonth={dateRange?.from}
+                                selected={dateRange}
+                                onSelect={setDateRange}
+                                numberOfMonths={2}
+                            />
+                        </PopoverContent>
+                    </Popover>
+                    {dateRange && (
+                        <Button variant="ghost" size="icon" onClick={() => setDateRange(undefined)} title="Clear Date Filter">
+                            <X className="w-4 h-4" />
+                        </Button>
+                    )}
                 </div>
             </div>
         </div>
