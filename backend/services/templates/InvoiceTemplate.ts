@@ -1,9 +1,9 @@
 import fs from 'fs';
 import path from 'path';
 import { format } from 'date-fns';
-import e from 'express';
 
 // --- Helper: Convert Number to Words (Indian Numbering System) ---
+// Note: You can switch this to International Numbering if your clients prefer "Millions" over "Lakhs"
 const numberToWords = (n: number): string => {
   const units = ['', 'One', 'Two', 'Three', 'Four', 'Five', 'Six', 'Seven', 'Eight', 'Nine', 'Ten', 'Eleven', 'Twelve', 'Thirteen', 'Fourteen', 'Fifteen', 'Sixteen', 'Seventeen', 'Eighteen', 'Nineteen'];
   const tens = ['', '', 'Twenty', 'Thirty', 'Forty', 'Fifty', 'Sixty', 'Seventy', 'Eighty', 'Ninety'];
@@ -22,6 +22,7 @@ const numberToWords = (n: number): string => {
   return convert(n);
 };
 
+// --- Helper: Dynamic Currency Words ---
 const getAmountInWords = (amount: number, currency: string = 'INR') => {
   const whole = Math.floor(amount);
   const fraction = Math.round((amount - whole) * 100);
@@ -29,9 +30,28 @@ const getAmountInWords = (amount: number, currency: string = 'INR') => {
   let currencyName = "Rupees";
   let fractionName = "Paise";
   
-  if (currency === 'USD') { currencyName = "Dollars"; fractionName = "Cents"; }
-  if (currency === 'EUR') { currencyName = "Euros"; fractionName = "Cents"; }
+  // Normalize code
+  const code = currency.toUpperCase();
+
+  // Broad categorization for common currencies
+  if (['USD', 'CAD', 'AUD', 'SGD', 'NZD'].includes(code)) {
+      currencyName = "Dollars";
+      fractionName = "Cents";
+  } else if (code === 'EUR') {
+      currencyName = "Euros";
+      fractionName = "Cents";
+  } else if (code === 'GBP') {
+      currencyName = "Pounds";
+      fractionName = "Pence";
+  } else if (code === 'AED') {
+      currencyName = "Dirhams";
+      fractionName = "Fils";
+  }
   
+  // Custom specific overrides if needed
+  if (code === 'CAD') currencyName = "Canadian Dollars";
+  if (code === 'AUD') currencyName = "Australian Dollars";
+
   let str = numberToWords(whole) + " " + currencyName;
   if (fraction > 0) {
       str += " and " + numberToWords(fraction) + " " + fractionName;
@@ -45,10 +65,13 @@ export const generateInvoiceHTML = (invoice: any, ownerProfile: any): string => 
     const items = Array.isArray(invoice.line_items) ? invoice.line_items : [];
     const tax = invoice.tax_summary || { taxType: 'IGST', breakdown: { cgst: 0, sgst: 0, igst: 0 } };
     const profile = ownerProfile?.json_value || {};
+    
+    // Fallback to INR if currency is missing (legacy invoices)
     const currency = invoice.currency || 'INR';
+    
+    // Generate words based on currency
     const amountInWords = getAmountInWords(Number(invoice.grand_total), currency);
         
-
     // 2. Formatters
     const formatCurrency = (amount: any) => {
       return new Intl.NumberFormat('en-IN', {
@@ -57,7 +80,6 @@ export const generateInvoiceHTML = (invoice: any, ownerProfile: any): string => 
         minimumFractionDigits: 2
       }).format(Number(amount) || 0);
     };
-    
 
     const formatDate = (dateString: any) => {
       try {
@@ -65,17 +87,16 @@ export const generateInvoiceHTML = (invoice: any, ownerProfile: any): string => 
       } catch (e) { return '-'; }
     };
 
-	// 3. Image Loader (FIXED: Use Localhost URL instead of file path)
-	const getImageUrl = (webPath: string) => {
+    // 3. Image Loader
+    const getImageUrl = (webPath: string) => {
         if (!webPath) return null;
-        // Since we are serving static files from /uploads, we prepend the local backend URL
         const port = process.env.PORT || 5000;
         const baseUrl = `http://localhost:${port}`;
         
         if (webPath.startsWith('/uploads')) {
             return `${baseUrl}${webPath}`;
         }
-        return webPath; // Return as is if it's already a full URL
+        return webPath; 
     };
 
     const logoSrc = getImageUrl(profile.logo);
@@ -83,31 +104,32 @@ export const generateInvoiceHTML = (invoice: any, ownerProfile: any): string => 
     const stampSrc = getImageUrl(profile.stamp);
 
     // 4. Tax Logic
+    // Only show granular tax rows if tax exists
     let taxRows = '';
     const cgst = tax.breakdown?.cgst || 0;
     const sgst = tax.breakdown?.sgst || 0;
     const igst = tax.breakdown?.igst || 0;
-    const rate = tax.gstRate || 18;
+    const rate = tax.gstRate || 0;
 
+    // Logic: If there is tax, show the breakdown. If export/exempt, show dashes or specific labels.
     if (tax.taxType === 'CGST_SGST' || (cgst > 0)) {
         taxRows += `
           <tr><td>SGST (${rate/2}%)</td><td>${formatCurrency(sgst)}</td></tr>
           <tr><td>CGST (${rate/2}%)</td><td>${formatCurrency(cgst)}</td></tr>
-          <tr><td>IGST </td><td> — </td></tr>
-          
+          <tr><td>IGST</td><td>——</td></tr>
         `;
     } else if (tax.taxType === 'IGST' || (igst > 0)) {
         taxRows += `
-            <tr><td>SGST</td><td> — </td></tr>
-            <tr><td>CGST </td><td> — </td></tr>
+            <tr><td>SGST</td><td>——</td></tr>
+            <tr><td>CGST</td><td>——</td></tr>
             <tr><td>IGST (${rate}%)</td><td>${formatCurrency(igst)}</td></tr>
         `;
-    }
-    else {
+    } else {
+        // Optional: Leave empty for non-tax invoices or Export
         taxRows += `
-            <tr><td>SGST</td><td> — </td></tr>
-            <tr><td>CGST </td><td> — </td></tr>
-            <tr><td>IGST</td><td> — </td></tr>
+            <tr><td>SGST</td><td>——</td></tr>
+            <tr><td>CGST</td><td>——</td></tr>
+            <tr><td>IGST</td><td>——</td></tr>
         `;
     }
 

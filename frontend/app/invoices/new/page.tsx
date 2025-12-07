@@ -9,12 +9,27 @@ import { Textarea } from "@/components/ui/textarea";
 import { Calendar } from "@/components/ui/calendar";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { format } from "date-fns";
-import { CalendarIcon, Save, Loader2, PlusCircle, AlertCircle } from "lucide-react";
+import { CalendarIcon, Save, Loader2, PlusCircle, AlertCircle, RefreshCw } from "lucide-react";
 import { InvoiceItemsTable, LineItem } from "./invoice-items";
 import api from "@/lib/api"; 
 import Link from "next/link";
 import { useRouter } from 'next/navigation';
 import { Switch } from "@/components/ui/switch";
+
+// --- Currency Helpers ---
+// This ensures we always show the correct symbol (e.g., CA$ vs $)
+const getCurrencyLocale = (code: string) => {
+    const map: Record<string, string> = {
+        'USD': 'en-US',
+        'INR': 'en-IN',
+        'CAD': 'en-CA',
+        'AUD': 'en-AU',
+        'GBP': 'en-GB',
+        'EUR': 'de-DE',
+        'JPY': 'ja-JP'
+    };
+    return map[code] || 'en-US';
+};
 
 export default function NewInvoicePage() {
   const router = useRouter();
@@ -31,8 +46,9 @@ export default function NewInvoicePage() {
   const [selectedClientId, setSelectedClientId] = useState<string>("");
   const [selectedBankId, setSelectedBankId] = useState<string>("");
   
-  // NEW: Currency State
+  // Multi-Currency State
   const [currency, setCurrency] = useState("INR");
+  const [exchangeRate, setExchangeRate] = useState<number>(1);
 
   const [isCalculating, setIsCalculating] = useState(false);
   const [isSaving, setIsSaving] = useState(false);
@@ -62,6 +78,7 @@ export default function NewInvoicePage() {
             if (defaultBank) {
                 setSelectedBankId(defaultBank.id);
                 setCurrency(defaultBank.currency);
+                setExchangeRate(1); // Default to 1, user can edit if foreign
             }
         } catch (e) {
             console.error(e);
@@ -76,7 +93,13 @@ export default function NewInvoicePage() {
     setSelectedBankId(bankId);
     
     const bank = banks.find(b => b.id.toString() === bankId);
-    if (bank) setCurrency(bank.currency);
+    if (bank) {
+        setCurrency(bank.currency);
+        // Reset exchange rate to 1 if we switch back to Base Currency (INR)
+        if (bank.currency === 'INR') {
+            setExchangeRate(1);
+        }
+    }
   };
 
   // --- Calculations ---
@@ -126,6 +149,7 @@ export default function NewInvoicePage() {
     if (!selectedClientId) return alert("Select a client");
     if (!selectedBankId) return alert("Select a bank account for payment details");
     if (items.length === 0 || subtotal === 0) return alert("Add items");
+    if (currency !== 'INR' && exchangeRate <= 0) return alert("Please enter a valid Exchange Rate");
 
     try {
       setIsSaving(true);
@@ -141,10 +165,13 @@ export default function NewInvoicePage() {
         isManual: isManual,
         manualNumber: isManual ? manualNumber : undefined,
         remarks: remarks,
-        currency // Send currency to backend
+        currency, // Actual Invoice Currency (e.g. USD)
+        exchange_rate: exchangeRate // Conversion rate to Base (INR)
       };
 
       const response = await api.post('/invoices', payload);
+      
+      // router.push is async, but we can alert first
       alert(`Success! Invoice ${response.data.invoice_number} Created`);
       router.push('/invoices');
 
@@ -156,11 +183,22 @@ export default function NewInvoicePage() {
     }
   };
 
+  // Helper for formatting money
+  const formatMoney = (amount: number) => {
+    return new Intl.NumberFormat(getCurrencyLocale(currency), { 
+        style: 'currency', 
+        currency: currency 
+    }).format(amount);
+  };
+
   return (
     <div className="min-h-screen bg-background p-6 space-y-6">
       
       <div className="flex justify-between items-center">
-        <h1 className="text-2xl font-bold text-primary">New Invoice</h1>
+        <div className="space-y-1">
+            <h1 className="text-2xl font-bold text-primary">New Invoice</h1>
+            <p className="text-sm text-muted-foreground">Create a new invoice in {currency}</p>
+        </div>
         <Button onClick={handleSave} disabled={isSaving} className="bg-primary hover:bg-slate-800">
           {isSaving ? <Loader2 className="w-4 h-4 animate-spin mr-2" /> : <Save className="w-4 h-4 mr-2" />}
           Save Invoice
@@ -170,24 +208,25 @@ export default function NewInvoicePage() {
       <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
         
         {/* Settings Column */}
-        <Card className="md:col-span-1 shadow-sm">
-          <CardContent className="p-6 space-y-4">
+        <Card className="md:col-span-1 shadow-sm h-fit">
+          <CardContent className="p-6 space-y-5">
             
-            <div className="flex items-center justify-between bg-background p-3 rounded-md">
-                <div className="flex items-center space-x-2" title="Enable to backdate or use custom invoice numbers">
-                    <Label htmlFor="manual-mode" className="cursor-pointer">Manual Override</Label>
+            {/* Manual Override */}
+            <div className="flex items-center justify-between bg-slate-50 dark:bg-slate-900 p-3 rounded-md border">
+                <div className="flex items-center space-x-2">
+                    <Label htmlFor="manual-mode" className="cursor-pointer font-medium text-sm">Manual #</Label>
                     <AlertCircle className="w-3 h-3 text-slate-400" />
                 </div>
                 <Switch id="manual-mode" checked={isManual} onCheckedChange={setIsManual} />
             </div>
 
             <div className="space-y-2">
-              <Label>Invoice #</Label>
+              <Label>Invoice Number</Label>
               <Input 
                 value={isManual ? manualNumber : "Auto-generated"} 
                 onChange={(e) => setManualNumber(e.target.value)}
                 disabled={!isManual}
-                className={!isManual ? "font-mono bg-slate-50 text-slate-400" : "font-mono border-blue-200 bg-blue-50"}
+                className={!isManual ? "font-mono bg-slate-50 text-slate-400" : "font-mono border-primary/20 bg-primary/5"}
               />
             </div>
 
@@ -195,48 +234,74 @@ export default function NewInvoicePage() {
             <div className="space-y-2">
                 <Label>Receiving Bank Account</Label>
                 <select
-                    className="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm"
+                    className="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
                     value={selectedBankId}
                     onChange={handleBankChange}
                 >
                     <option value="">Select Bank...</option>
                     {banks.map(bank => (
                         <option key={bank.id} value={bank.id}>
-                            {bank.label} ({bank.currency}) - {bank.bank_name}
+                            {bank.label} ({bank.currency})
                         </option>
                     ))}
                 </select>
+                <p className="text-[11px] text-muted-foreground pt-1">
+                    Invoice currency is determined by the bank account.
+                </p>
             </div>
 
+            {/* Exchange Rate Input - Only for Foreign Currencies */}
+            {currency !== 'INR' && (
+                <div className="space-y-2 p-3 bg-yellow-50 dark:bg-yellow-950/20 border border-yellow-200 dark:border-yellow-900/50 rounded-md">
+                    <div className="flex justify-between items-center">
+                        <Label className="text-yellow-800 dark:text-yellow-500">Exchange Rate</Label>
+                        <span className="text-xs text-yellow-700 dark:text-yellow-400 font-mono">1 {currency} = ? INR</span>
+                    </div>
+                    <div className="relative">
+                        <Input 
+                            type="number" 
+                            step="0.01"
+                            value={exchangeRate}
+                            onChange={(e) => setExchangeRate(parseFloat(e.target.value))}
+                            className="bg-white dark:bg-black border-yellow-200"
+                        />
+                        <RefreshCw className="w-3 h-3 absolute right-3 top-3.5 text-slate-400" />
+                    </div>
+                    <p className="text-[10px] text-yellow-700 dark:text-yellow-500/80 leading-tight">
+                        Required for accurate Ledger reports in INR. The client will still see {currency}.
+                    </p>
+                </div>
+            )}
+
             {/* Dates */}
-            <div className="space-y-2 flex flex-col">
-              <Label>Invoice Date</Label>
-              <Popover>
-                <PopoverTrigger asChild>
-                  <Button variant={"outline"} className="w-full pl-3 text-left font-normal">
-                    {issueDate ? format(issueDate, "PPP") : <span>Pick a date</span>}
-                    <CalendarIcon className="ml-auto h-4 w-4 opacity-50" />
-                  </Button>
-                </PopoverTrigger>
-                <PopoverContent className="w-auto p-0" align="start">
-                  <Calendar mode="single" selected={issueDate} onSelect={setIssueDate} initialFocus />
-                </PopoverContent>
-              </Popover>
-            </div>
-            
-            <div className="space-y-2 flex flex-col">
-              <Label>Due Date</Label>
-              <Popover>
-                <PopoverTrigger asChild>
-                  <Button variant={"outline"} className="w-full pl-3 text-left font-normal">
-                    {dueDate ? format(dueDate, "PPP") : <span>Pick a date</span>}
-                    <CalendarIcon className="ml-auto h-4 w-4 opacity-50" />
-                  </Button>
-                </PopoverTrigger>
-                <PopoverContent className="w-auto p-0" align="start">
-                  <Calendar mode="single" selected={dueDate} onSelect={setDueDate} initialFocus />
-                </PopoverContent>
-              </Popover>
+            <div className="grid grid-cols-2 gap-3">
+                <div className="space-y-2 flex flex-col">
+                  <Label>Invoice Date</Label>
+                  <Popover>
+                    <PopoverTrigger asChild>
+                      <Button variant={"outline"} className="w-full pl-3 text-left font-normal text-xs">
+                        {issueDate ? format(issueDate, "PP") : <span>Pick date</span>}
+                      </Button>
+                    </PopoverTrigger>
+                    <PopoverContent className="w-auto p-0" align="start">
+                      <Calendar mode="single" selected={issueDate} onSelect={setIssueDate} initialFocus />
+                    </PopoverContent>
+                  </Popover>
+                </div>
+                
+                <div className="space-y-2 flex flex-col">
+                  <Label>Due Date</Label>
+                  <Popover>
+                    <PopoverTrigger asChild>
+                      <Button variant={"outline"} className="w-full pl-3 text-left font-normal text-xs">
+                        {dueDate ? format(dueDate, "PP") : <span>Pick date</span>}
+                      </Button>
+                    </PopoverTrigger>
+                    <PopoverContent className="w-auto p-0" align="start">
+                      <Calendar mode="single" selected={dueDate} onSelect={setDueDate} initialFocus />
+                    </PopoverContent>
+                  </Popover>
+                </div>
             </div>
 
           </CardContent>
@@ -262,43 +327,72 @@ export default function NewInvoicePage() {
                 <option value="">Select Client...</option>
                 {clients.map(client => (
                   <option key={client.id} value={client.id}>
-                    {client.company_name} ({client.state_code})
+                    {client.company_name} - {client.country === 'India' ? client.state_code : client.country}
                   </option>
                 ))}
               </select>
             </div>
 
             {/* Items Table */}
+            {/* We pass currency here so the rows show $ or ₹ */}
             <InvoiceItemsTable items={items} setItems={setItems} currency={currency} />
 
             {/* Remarks */}
             <div className="space-y-2">
                 <Label>Remarks / Payment Terms</Label>
                 <Textarea 
-                    placeholder="E.g. Payment due within 15 days. Thank you for your business."
+                    placeholder={`e.g. Please pay in ${currency}. Bank charges to be borne by payer.`}
                     value={remarks}
                     onChange={(e) => setRemarks(e.target.value)}
-                    className="h-20"
+                    className="h-20 resize-none"
                 />
             </div>
 
             {/* Totals */}
             <div className="flex justify-end pt-4 border-t">
-                <div className="w-64 space-y-2">
+                <div className="w-72 space-y-3">
                     <div className="flex justify-between text-sm">
                         <span className="text-gray-500">Subtotal</span>
-                        <span>{subtotal.toFixed(2)}</span>
+                        <span className="font-medium">{formatMoney(subtotal)}</span>
                     </div>
-                    <div className="flex justify-between text-sm text-slate-600">
-                        <span>Tax ({taxData.taxType})</span>
-                        <span>{(grandTotal - subtotal).toFixed(2)}</span>
-                    </div>
-                    <div className="border-t pt-2 flex justify-between font-bold text-lg">
-                        <span>Total</span>
-                        {/* DYNAMIC CURRENCY FORMAT */}
-                        <span>
-                            {new Intl.NumberFormat('en-IN', { style: 'currency', currency: currency }).format(grandTotal)}
-                        </span>
+                    
+                    {/* Tax Breakdown */}
+                    {taxData.taxType !== 'NONE' && (
+                        <div className="text-xs text-slate-500 space-y-1 py-1 border-y border-dashed">
+                            {taxData.breakdown.cgst > 0 && (
+                                <div className="flex justify-between">
+                                    <span>CGST ({taxData.gstRate/2}%)</span>
+                                    <span>{formatMoney(taxData.breakdown.cgst)}</span>
+                                </div>
+                            )}
+                            {taxData.breakdown.sgst > 0 && (
+                                <div className="flex justify-between">
+                                    <span>SGST ({taxData.gstRate/2}%)</span>
+                                    <span>{formatMoney(taxData.breakdown.sgst)}</span>
+                                </div>
+                            )}
+                            {taxData.breakdown.igst > 0 && (
+                                <div className="flex justify-between">
+                                    <span>IGST ({taxData.gstRate}%)</span>
+                                    <span>{formatMoney(taxData.breakdown.igst)}</span>
+                                </div>
+                            )}
+                        </div>
+                    )}
+
+                    <div className="flex justify-between items-center bg-slate-100 dark:bg-slate-800 p-3 rounded-lg">
+                        <span className="font-bold text-lg">Total</span>
+                        <div className="text-right">
+                            <span className="block font-bold text-xl text-primary">
+                                {formatMoney(grandTotal)}
+                            </span>
+                            {/* Ledger Preview Hint */}
+                            {currency !== 'INR' && (
+                                <span className="text-[10px] text-muted-foreground block">
+                                    (≈ ₹{(grandTotal * exchangeRate).toFixed(2)} INR)
+                                </span>
+                            )}
+                        </div>
                     </div>
                 </div>
             </div>
