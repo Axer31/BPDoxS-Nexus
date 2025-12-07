@@ -455,7 +455,7 @@ export const generateInvoiceHTML = (invoice: any, ownerProfile: any): string => 
             ${invoice.client.addresses?.billing?.city || ''}, 
             ${invoice.client.addresses?.billing?.zip || ''}
         </div>
-        ${invoice.client.tax_id ? `<div>Tax ID: ${invoice.client.tax_id}</div>` : ''}
+        <div>${invoice.client.tax_id ? `Tax ID: ${invoice.client.tax_id}` : ''} | ${invoice.client.cin ? `REG Number: ${invoice.client.cin}` : ''}</div>
     </div>
 
     <table id="product-table" cellspacing="0">
@@ -490,12 +490,17 @@ export const generateInvoiceHTML = (invoice: any, ownerProfile: any): string => 
         <div class="bottom-left">
             <div class="bank-info">
                 <div class="bank-title">Bank Details</div>
-                <div>Bank: ${invoice.bank_account?.bank_name || profile.bank_details || 'N/A'}</div>
-                <div>A/C Holder: ${invoice.bank_account?.account_holder || ''}</div>
-                <div>A/C No: ${invoice.bank_account?.account_number || ''}</div>
-                <div>IFSC: ${invoice.bank_account?.ifsc_code || ''}</div>
+                <div>Bank Name: ${invoice.bank_account?.bank_name || profile.bank_details || 'N/A'}</div>
+                <div>Account Holder: ${invoice.bank_account?.account_holder || ''}</div>
+                <div>Account No: ${invoice.bank_account?.account_number || ''}</div>
+                ${invoice.bank_account?.ifsc_code ? `<div>IFSC: ${invoice.bank_account.ifsc_code}</div>` : ''}
                 ${invoice.bank_account?.swift_code ? `<div>SWIFT: ${invoice.bank_account.swift_code}</div>` : ''}
+                ${invoice.bank_account?.iban ? `<div>IBAN: ${invoice.bank_account.iban}</div>` : ''}
+                ${invoice.bank_account?.routing_number ? `<div>Routing Number: ${invoice.bank_account.routing_number}</div>` : ''}
+                ${invoice.bank_account?.sort_code ? `<div>Sort Code: ${invoice.bank_account.sort_code}</div>` : ''}
                 ${invoice.bank_account?.payment_method ? `<div>Method: ${invoice.bank_account.payment_method}</div>` : ''}
+                ${invoice.bank_account?.upi_id ? `<div>UPI ID: ${invoice.bank_account.upi_id}</div>` : ''}
+                ${invoice.bank_account?.branch_address ? `<div>Branch Address: ${invoice.bank_account.branch_address}</div>` : ''}
             </div>
         </div>
 
@@ -528,6 +533,7 @@ export const generateInvoiceHTML = (invoice: any, ownerProfile: any): string => 
     <div id="footer-line"></div>
     <div><strong>${profile.company_name || ''}</strong></div>
     <div>${profile.address || ''}</div>
+    <div>${profile.state || ''}, India</div>
     <div>GSTIN: ${profile.gstin || ''} | CIN: ${profile.cin || ''}</div>
     <div style="margin-top:5px; color:#555;">This is a computer-generated invoice and no signature is required.</div>
 </div>

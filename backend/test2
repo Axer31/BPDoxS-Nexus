@@ -1,0 +1,4 @@
+PORT=5000
+DATABASE_URL="mysql://abyss:Pass%231234@127.0.01:3306/invoice"
+JWT_SECRET="7d1e0e395052301dd850fdaee348ddb3aaeaf69c809dc16bd31990c2e55cf195"
+PUPPETEER_EXECUTABLE_PATH="/usr/bin/chromium-browser"

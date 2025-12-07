@@ -1,6 +1,6 @@
 import { Router, Request, Response } from 'express';
 import { PrismaClient } from '@prisma/client';
-import { format, startOfYear, subYears, getYear } from 'date-fns';
+import { format } from 'date-fns';
 
 const router = Router();
 const prisma = new PrismaClient();
@@ -28,29 +28,47 @@ router.get('/stats', async (req: Request, res: Response) => {
 
     // 1. SUMMARY & TOP UNPAID (Global Stats)
     if (shouldFetch('summary')) {
-        const revenueAgg = await prisma.invoice.aggregate({
-            _sum: { grand_total: true },
+        // FETCH REVENUE (PAID) - WITH CURRENCY CONVERSION
+        // We use findMany instead of aggregate to apply the exchange rate logic row-by-row
+        const paidInvoices = await prisma.invoice.findMany({
             where: {
                 status: { in: ['PAID', 'Paid'] },
                 payment_date: { gte: fromDate, lte: toDate }
+            },
+            select: { 
+                grand_total: true, 
+                exchange_rate: true 
             }
         });
 
-        const pendingAgg = await prisma.invoice.aggregate({
-            _sum: { grand_total: true },
+        // FETCH PENDING (SENT/OVERDUE) - WITH CURRENCY CONVERSION
+        const pendingInvoices = await prisma.invoice.findMany({
             where: {
                 status: { in: ['SENT', 'Sent', 'OVERDUE', 'Overdue', 'PARTIAL', 'Partial'] },
                 issue_date: { gte: fromDate, lte: toDate }
+            },
+            select: { 
+                grand_total: true, 
+                exchange_rate: true 
             }
         });
+
+        // Normalize totals to Base Currency (INR)
+        const totalRevenue = paidInvoices.reduce((sum, inv) => {
+            const rate = Number(inv.exchange_rate) || 1;
+            return sum + (Number(inv.grand_total) * rate);
+        }, 0);
+
+        const totalPending = pendingInvoices.reduce((sum, inv) => {
+            const rate = Number(inv.exchange_rate) || 1;
+            return sum + (Number(inv.grand_total) * rate);
+        }, 0);
 
         const expenseAgg = await prisma.expense.aggregate({
             _sum: { amount: true },
             where: { date: { gte: fromDate, lte: toDate } }
         });
 
-        const totalRevenue = Number(revenueAgg._sum.grand_total?.toString() || 0);
-        const totalPending = Number(pendingAgg._sum.grand_total?.toString() || 0);
         const totalExpense = Number(expenseAgg._sum.amount?.toString() || 0);
 
         response.summary = { 
@@ -77,7 +95,11 @@ router.get('/stats', async (req: Request, res: Response) => {
                 status: { in: ['PAID', 'Paid'] },
                 payment_date: { gte: fromDate, lte: toDate }
             },
-            select: { payment_date: true, grand_total: true }
+            select: { 
+                payment_date: true, 
+                grand_total: true,
+                exchange_rate: true // Fetch Rate
+            }
         });
 
         const allExpenses = await prisma.expense.findMany({
@@ -91,7 +113,12 @@ router.get('/stats', async (req: Request, res: Response) => {
             const d = inv.payment_date || new Date(); 
             const month = format(d, 'MMM yyyy');
             const existing = statsMap.get(month) || { revenue: 0, expense: 0, count: 0 };
-            existing.revenue += Number(inv.grand_total?.toString() || 0);
+            
+            // CONVERT TO INR
+            const rate = Number(inv.exchange_rate) || 1;
+            const amountInR = Number(inv.grand_total) * rate;
+
+            existing.revenue += amountInR;
             existing.count += 1;
             statsMap.set(month, existing);
         });
@@ -142,7 +169,11 @@ router.get('/stats', async (req: Request, res: Response) => {
                         lte: new Date(maxStartYear + 1, 2, 31) 
                     }
                 },
-                select: { payment_date: true, grand_total: true }
+                select: { 
+                    payment_date: true, 
+                    grand_total: true,
+                    exchange_rate: true // Fetch Rate
+                }
             });
 
             const fyMap = new Map<string, number>();
@@ -155,7 +186,11 @@ router.get('/stats', async (req: Request, res: Response) => {
                 if (!inv.payment_date) return;
                 const fyStr = getFinancialYear(inv.payment_date);
                 if (fyMap.has(fyStr)) {
-                    fyMap.set(fyStr, (fyMap.get(fyStr) || 0) + Number(inv.grand_total));
+                    // CONVERT TO INR
+                    const rate = Number(inv.exchange_rate) || 1;
+                    const amountInR = Number(inv.grand_total) * rate;
+
+                    fyMap.set(fyStr, (fyMap.get(fyStr) || 0) + amountInR);
                 }
             });
 
