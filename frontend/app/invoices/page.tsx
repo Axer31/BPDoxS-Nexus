@@ -80,43 +80,6 @@ export default function InvoiceListPage() {
   }, []);
 
   // Filtering Logic
-  // --- 2. CALCULATE FINANCIAL YEARS ---
-  const availableFYs = useMemo(() => {
-      const years = new Set<number>();
-      const currentYear = new Date().getFullYear();
-      years.add(currentYear);
-      
-      invoices.forEach(inv => {
-          const d = new Date(inv.issue_date);
-          const month = d.getMonth();
-          const year = d.getFullYear();
-          // FY Logic: If Jan-Mar (0-2), it belongs to previous year's FY start
-          years.add(month < 3 ? year - 1 : year);
-      });
-      return Array.from(years).sort((a, b) => b - a);
-  }, [invoices]);
-
-  // --- 3. FILTER HANDLERS (Mutually Exclusive) ---
-  const handlePeriodChange = (val: string) => {
-      setPeriodFilter(val);
-      setDateRange(undefined); // Clear Range when Preset is chosen
-  };
-
-  const handleDateRangeSelect = (range: DateRange | undefined) => {
-      setDateRange(range);
-      if(range) setPeriodFilter("CUSTOM"); // Clear Preset when Range is chosen
-  };
-
-  // --- Helper: Format Currency correctly ---
-  const formatMoney = (amount: number, currency: string) => {
-    return new Intl.NumberFormat('en-IN', {
-      style: 'currency',
-      currency: currency || 'INR',
-      minimumFractionDigits: 2,
-    }).format(amount);
-  };
-
-  // --- 4. FILTERING LOGIC ---
   useEffect(() => {
     let temp = invoices;
 
