@@ -428,8 +428,7 @@ export const generateInvoiceHTML = (invoice: any, ownerProfile: any): string => 
             <div class="company-meta-line">Email: ${profile.email || ''} | Phone: ${profile.phone || ''}</div>
             <div class="company-meta-line">
             ${profile.gstin ? `GSTIN: ${profile.gstin}` : ''} 
-            </div>
-            <div class="company-meta-line">
+            ${profile.gstin && profile.cin ? ' | ' : ''}
             ${profile.cin ? `CIN: ${profile.cin}` : ''}
             </div>
             <div class="company-address-line" style="white-space: pre-line;">${profile.address || ''}</div>
@@ -456,7 +455,7 @@ export const generateInvoiceHTML = (invoice: any, ownerProfile: any): string => 
             ${invoice.client.addresses?.billing?.city || ''}, 
             ${invoice.client.addresses?.billing?.zip || ''}
         </div>
-        <div>${invoice.client.tax_id ? `Tax ID: ${invoice.client.tax_id}` : ''} | ${invoice.client.cin ? `REG Number: ${invoice.client.cin}` : ''}</div>
+        <div>${invoice.client.tax_id ? `Tax ID: ${invoice.client.tax_id}` : ''} ${invoice.client.tax_id && invoice.client.cin ? ' | ' : ''} ${invoice.client.cin ? `REG Number: ${invoice.client.cin}` : ''}</div>
     </div>
 
     <table id="product-table" cellspacing="0">
