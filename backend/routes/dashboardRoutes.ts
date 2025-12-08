@@ -99,6 +99,10 @@ router.get('/stats', async (req: Request, res: Response) => {
             return sum + actual;
         }, 0);
 
+        // NEW LOGIC: Calculate Average Sale
+        const paidCount = paidInvoices.length;
+        const avgSale = paidCount > 0 ? totalRevenue / paidCount : 0;
+
         const totalPending = Number(pendingInvoices._sum.grand_total || 0);
 
         const expenseAgg = await prisma.expense.aggregate({
@@ -112,7 +116,8 @@ router.get('/stats', async (req: Request, res: Response) => {
             totalRevenue, 
             totalExpense, 
             netProfit: totalRevenue - totalExpense, 
-            totalPending 
+            totalPending,
+            avgSale // <--- Included in response
         };
     }
 

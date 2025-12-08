@@ -4,7 +4,7 @@ import React, { useEffect, useState } from "react";
 import api from "@/lib/api";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
-import { DollarSign, Activity, TrendingUp, Wallet, Loader2, Check, ChevronsUpDown } from "lucide-react";
+import { DollarSign, Activity, TrendingUp, Wallet, Loader2, Check, ChevronsUpDown, BadgePercent } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { ScrollArea } from "@/components/ui/scroll-area";
@@ -17,11 +17,60 @@ import { Command, CommandGroup, CommandItem } from "@/components/ui/command";
 import { ChartCard } from "@/components/dashboard/ChartCard";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 
-// Helper: FY Date Range (April 1 - March 31)
+// --- DATE HELPERS ---
+
+// 1. Helper for specific Financial Year (Used for charts/tables that are strictly FY based)
 const getFinancialYearDates = (startYear: number) => {
     const from = new Date(startYear, 3, 1); // April 1st
-    const to = new Date(startYear + 1, 2, 31); // March 31st next year
+    const to = new Date(startYear + 1, 2, 31, 23, 59, 59); // March 31st next year
     return { from, to };
+};
+
+// 2. New Helper for Overview Filter (Handles Daily, Monthly, Quarterly, Yearly, All Time, FY)
+const getOverviewDates = (filter: string) => {
+    const now = new Date();
+    const currentYear = now.getFullYear();
+    const currentMonth = now.getMonth();
+
+    // Handle Financial Year Format: "FY-2024"
+    if (filter.startsWith('FY-')) {
+        const startYear = parseInt(filter.split('-')[1]);
+        return getFinancialYearDates(startYear);
+    }
+
+    switch (filter) {
+        case 'daily': // Today 00:00 - 23:59
+            return { 
+                from: new Date(currentYear, currentMonth, now.getDate(), 0, 0, 0),
+                to: new Date(currentYear, currentMonth, now.getDate(), 23, 59, 59)
+            };
+        case 'monthly': // This Month
+            return { 
+                from: new Date(currentYear, currentMonth, 1), 
+                to: new Date(currentYear, currentMonth + 1, 0, 23, 59, 59) 
+            };
+        case 'quarterly': // This Quarter
+            const qStartMonth = Math.floor(currentMonth / 3) * 3;
+            return { 
+                from: new Date(currentYear, qStartMonth, 1), 
+                to: new Date(currentYear, qStartMonth + 3, 0, 23, 59, 59) 
+            };
+        case 'yearly': // Calendar Year (Jan - Dec)
+            return { 
+                from: new Date(currentYear, 0, 1), 
+                to: new Date(currentYear, 11, 31, 23, 59, 59) 
+            };
+        case 'all': // All Time (from 2000 to Now)
+            return { 
+                from: new Date(2000, 0, 1), 
+                to: new Date() 
+            };
+        default: // Default to Month
+            return { 
+                from: new Date(currentYear, currentMonth, 1), 
+                to: new Date(currentYear, currentMonth + 1, 0, 23, 59, 59) 
+            };
+    }
 };
 
 export default function DashboardPage() {
@@ -31,11 +80,11 @@ export default function DashboardPage() {
   
   // --- STATE MANAGEMENT ---
   
-  // 0. Dynamic Years State (Replaces hardcoded list)
+  // 0. Dynamic Years State
   const [activeYears, setActiveYears] = useState<number[]>([initialFyStart]); 
 
-  // 1. Overview Filter State
-  const [overviewFy, setOverviewFy] = useState<string>(initialFyStart.toString());
+  // 1. Overview Filter State (Changed from strictly FY to generic filter)
+  const [overviewFilter, setOverviewFilter] = useState<string>("monthly"); // Default: This Month
   const [summary, setSummary] = useState<any>({});
 
   // 2. Comparison Chart State
@@ -71,11 +120,12 @@ export default function DashboardPage() {
   // A. Fetch Initial Static Data (Shared Invoices & Available Years)
   useEffect(() => {
     const fetchInit = async () => {
-        const fyDates = getFinancialYearDates(parseInt(overviewFy)); // Use initial FY for summary
+        // Initial summary fetch uses the default 'overviewFilter' state (monthly)
+        const dates = getOverviewDates(overviewFilter);
         const params = new URLSearchParams({
-            from: fyDates.from.toISOString(),
-            to: fyDates.to.toISOString(),
-            sections: 'summary,availableYears' // <--- Request Available Years
+            from: dates.from.toISOString(),
+            to: dates.to.toISOString(),
+            sections: 'summary,availableYears'
         });
 
         try {
@@ -101,10 +151,10 @@ export default function DashboardPage() {
   useEffect(() => {
     if (loading) return; // Skip on initial load (handled by fetchInit)
     const fetchSummary = async () => {
-        const fyDates = getFinancialYearDates(parseInt(overviewFy));
+        const dates = getOverviewDates(overviewFilter); // Use new helper
         const params = new URLSearchParams({
-            from: fyDates.from.toISOString(),
-            to: fyDates.to.toISOString(),
+            from: dates.from.toISOString(),
+            to: dates.to.toISOString(),
             sections: 'summary'
         });
         try {
@@ -113,7 +163,7 @@ export default function DashboardPage() {
         } catch (e) { console.error(e); }
     };
     fetchSummary();
-  }, [overviewFy]);
+  }, [overviewFilter]); // Listen to overviewFilter
 
   // C. Fetch Yearly Comparison
   useEffect(() => {
@@ -222,20 +272,31 @@ export default function DashboardPage() {
             <p className="text-muted-foreground">Financial Overview</p>
         </div>
 
-        {/* OVERVIEW FILTER: Uses activeYears */}
+        {/* OVERVIEW FILTER: NEW IMPLEMENTATION */}
         <div className="flex items-center gap-2">
             <span className="text-sm font-medium text-muted-foreground">Overview for:</span>
-            <Select value={overviewFy} onValueChange={setOverviewFy}>
-                <SelectTrigger className="h-9 w-[150px] bg-background border-input shadow-sm">
+            <Select value={overviewFilter} onValueChange={setOverviewFilter}>
+                <SelectTrigger className="h-9 w-[180px] bg-background border-input shadow-sm">
                     <SelectValue />
                 </SelectTrigger>
                 <SelectContent>
-                    <ScrollArea className="max-h-[300px]">
-                        {activeYears.map(y => (
-                            <SelectItem key={y} value={y.toString()}>
-                                FY {y}-{y.toString().slice(-2) === '99' ? '00' : (y+1).toString().slice(-2)}
-                            </SelectItem>
-                        ))}
+                    <ScrollArea className="h-[300px]">
+                        <div className="p-1">
+                            <p className="text-xs font-semibold text-muted-foreground px-2 py-1.5">Standard Ranges</p>
+                            <SelectItem value="daily">Daily (Today)</SelectItem>
+                            <SelectItem value="monthly">This Month</SelectItem>
+                            <SelectItem value="quarterly">This Quarter</SelectItem>
+                            <SelectItem value="yearly">This Year (Jan-Dec)</SelectItem>
+                            <SelectItem value="all">All Time</SelectItem>
+                            
+                            <p className="text-xs font-semibold text-muted-foreground px-2 py-1.5 mt-2">Financial Years</p>
+                            {/* DYNAMICALLY RENDERED FYs */}
+                            {activeYears.map(year => (
+                                <SelectItem key={year} value={`FY-${year}`}>
+                                    FY {year}-{year.toString().slice(-2) === '99' ? '00' : (year+1).toString().slice(-2)}
+                                </SelectItem>
+                            ))}
+                        </div>
                     </ScrollArea>
                 </SelectContent>
             </Select>
@@ -244,16 +305,40 @@ export default function DashboardPage() {
       
       {/* 1. TOP METRICS */}
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
-        <MetricCard title="Total Revenue" value={summary?.totalRevenue || 0} icon={<DollarSign />} color="text-blue-600" bg="bg-blue-50 dark:bg-blue-900/20" />
-        <MetricCard title="Total Expenses" value={summary?.totalExpense || 0} icon={<Wallet />} color="text-red-600" bg="bg-red-50 dark:bg-red-900/20" />
-        <MetricCard title="Net Profit" value={summary?.netProfit || 0} icon={<Activity />} color="text-green-600" bg="bg-green-50 dark:bg-green-900/20" />
-        <MetricCard title="Pending Revenue" value={summary?.totalPending || 0} icon={<TrendingUp />} color="text-orange-600" bg="bg-orange-50 dark:bg-orange-900/20" />
+        <MetricCard 
+            title="Total Revenue" 
+            value={summary?.totalRevenue || 0} 
+            icon={<DollarSign />} 
+            color="text-blue-600" 
+            bg="bg-blue-50 dark:bg-blue-900/20" 
+        />
+        <MetricCard 
+            title="Total Expenses" 
+            value={summary?.totalExpense || 0} 
+            icon={<Wallet />} 
+            color="text-red-600" 
+            bg="bg-red-50 dark:bg-red-900/20" 
+        />
+        <MetricCard 
+            title="Net Profit" 
+            value={summary?.netProfit || 0} 
+            icon={<Activity />} 
+            color="text-green-600" 
+            bg="bg-green-50 dark:bg-green-900/20" 
+        />
+        <MetricCard 
+            title="Avg Sale" 
+            value={summary?.avgSale || 0} 
+            icon={<BadgePercent />} 
+            color="text-indigo-600" 
+            bg="bg-indigo-50 dark:bg-indigo-900/20" 
+        />
       </div>
 
       {/* 2. TOP CHART ROW */}
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
         
-        {/* YEARLY COMPARISON: Uses activeYears */}
+        {/* YEARLY COMPARISON */}
         <ChartCard 
             title="Yearly Comparison" 
             description="Revenue per Financial Year"
@@ -292,7 +377,7 @@ export default function DashboardPage() {
             </ResponsiveContainer>
         </ChartCard>
 
-        {/* NET BALANCE TREND: Uses activeYears */}
+        {/* NET BALANCE TREND */}
         <ChartCard 
             title="Net Balance Trend" 
             description={`Cumulative for FY ${netBalanceFy}-${parseInt(netBalanceFy)+1}`}
@@ -327,7 +412,7 @@ export default function DashboardPage() {
         </ChartCard>
       </div>
 
-      {/* 3. MONTHLY PERFORMANCE: Uses activeYears */}
+      {/* 3. MONTHLY PERFORMANCE */}
       <div className="grid grid-cols-1 gap-6">
         <ChartCard 
             title="Monthly Performance" 
@@ -336,11 +421,11 @@ export default function DashboardPage() {
                 <Select value={monthlyFy} onValueChange={setMonthlyFy}>
                     <SelectTrigger className="h-8 w-[140px]"><SelectValue /></SelectTrigger>
                     <SelectContent>
-                       <ScrollArea className="max-h-[300px]">
+                        <ScrollArea className="max-h-[300px]">
                         {activeYears.map(y => (
                             <SelectItem key={y} value={y.toString()}>FY {y}-{y.toString().slice(-2) === '99' ? '00' : (y+1).toString().slice(-2)}</SelectItem>
                         ))}
-                       </ScrollArea>
+                        </ScrollArea>
                     </SelectContent>
                 </Select>
             }
@@ -359,7 +444,7 @@ export default function DashboardPage() {
         </ChartCard>
       </div>
 
-      {/* 4. EXPENSE TABLE: Uses activeYears */}
+      {/* 4. EXPENSE TABLE */}
       <Card className="shadow-horizon border-none bg-card overflow-hidden">
         <CardHeader className="flex flex-row items-center justify-between">
             <div>
@@ -369,11 +454,11 @@ export default function DashboardPage() {
             <Select value={expenseFy} onValueChange={setExpenseFy}>
                 <SelectTrigger className="h-8 w-[140px]"><SelectValue /></SelectTrigger>
                 <SelectContent>
-                   <ScrollArea className="max-h-[300px]">
-                    {activeYears.map(y => (
+                    <ScrollArea className="max-h-[300px]">
+                     {activeYears.map(y => (
                         <SelectItem key={y} value={y.toString()}>FY {y}-{y.toString().slice(-2) === '99' ? '00' : (y+1).toString().slice(-2)}</SelectItem>
-                    ))}
-                   </ScrollArea>
+                     ))}
+                    </ScrollArea>
                 </SelectContent>
             </Select>
         </CardHeader>
@@ -405,7 +490,7 @@ export default function DashboardPage() {
         </CardContent>
       </Card>
       
-      {/* 5. BOTTOM TABLES: Uses activeYears for Balance History */}
+      {/* 5. BOTTOM TABLES */}
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
           <Card className="shadow-horizon border-none bg-card">
             <CardHeader className="flex flex-row items-center justify-between">
@@ -413,11 +498,11 @@ export default function DashboardPage() {
                 <Select value={recentFy} onValueChange={setRecentFy}>
                     <SelectTrigger className="h-8 w-[120px]"><SelectValue /></SelectTrigger>
                     <SelectContent>
-                       <ScrollArea className="max-h-[300px]">
+                        <ScrollArea className="max-h-[300px]">
                         {activeYears.slice(0, 20).map(y => (
                             <SelectItem key={y} value={y.toString()}>FY {y}-{y.toString().slice(-2) === '99' ? '00' : (y+1).toString().slice(-2)}</SelectItem>
                         ))}
-                       </ScrollArea>
+                        </ScrollArea>
                     </SelectContent>
                 </Select>
             </CardHeader>
