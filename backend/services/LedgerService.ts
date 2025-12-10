@@ -5,24 +5,21 @@ const prisma = new PrismaClient();
 export class LedgerService {
 
   static async getLedger(from?: string, to?: string) {
-    // 1. Build Date Filter for INCOME (Uses payment_date)
     const paymentDateFilter: any = {};
-    // 2. Build Date Filter for EXPENSES (Uses date)
-    const expenseDateFilter: any = {};
+    const generalDateFilter: any = {}; // Used for Expenses AND Other Income
 
     if (from && to) {
         const fromDate = new Date(from);
         const toDate = new Date(to);
         
-        // Ensure inclusive filtering
         paymentDateFilter.gte = fromDate;
         paymentDateFilter.lte = toDate;
 
-        expenseDateFilter.gte = fromDate;
-        expenseDateFilter.lte = toDate;
+        generalDateFilter.gte = fromDate;
+        generalDateFilter.lte = toDate;
     }
 
-    // 2. Fetch Income (Strictly 'PAID' and uses payment_date)
+    // 1. Fetch Invoices (Existing Logic)
     const invoices = await prisma.invoice.findMany({
       where: {
         status: { in: ['PAID', 'Paid'] }, 
@@ -35,14 +32,20 @@ export class LedgerService {
         payment_date: true,
         grand_total: true,
         currency: true,      
-        received_amount: true, // <--- FETCH THIS, NO EXCHANGE RATE
+        received_amount: true, 
         client: { select: { company_name: true } }
       }
     });
 
-    // 3. Fetch Expenses
+    // 2. [NEW] Fetch Other Income
+    const otherIncome = await prisma.otherIncome.findMany({
+      where: { date: generalDateFilter },
+      orderBy: { date: 'desc' }
+    });
+
+    // 3. Fetch Expenses (Existing Logic)
     const expenses = await prisma.expense.findMany({
-      where: { date: expenseDateFilter },
+      where: { date: generalDateFilter },
       select: {
         id: true,
         date: true,
@@ -52,29 +55,17 @@ export class LedgerService {
       }
     });
 
-    // 4. Normalize
-    const creditEntries = invoices.map(inv => {
+    // 4. Normalize & Map
+    const invoiceEntries = invoices.map(inv => {
       const originalAmount = Number(inv.grand_total?.toString() || 0);
-      
-      // LOGIC: Use Manual INR Amount if exists, else fallback to grand_total
-      const amountInBase = inv.received_amount 
-          ? Number(inv.received_amount) 
-          : originalAmount;
-
-      // Use payment_date if available, fallback to issue_date
+      const amountInBase = inv.received_amount ? Number(inv.received_amount) : originalAmount;
       const actualDate = inv.payment_date || inv.issue_date; 
       
-      // Enhance description to show original foreign amount for audit trail
       let desc = `Invoice #${inv.invoice_number} - ${inv.client.company_name}`;
-      
       if (inv.currency && inv.currency !== 'INR') {
-          if (inv.received_amount) {
-              // Case: Foreign Currency with Manual INR Entry
-              desc += ` (${inv.currency} ${originalAmount.toFixed(2)} -> INR ${amountInBase.toFixed(2)})`;
-          } else {
-              // Case: Foreign Currency without Manual Entry (displayed as-is)
-              desc += ` (${inv.currency} ${originalAmount.toFixed(2)})`;
-          }
+          desc += inv.received_amount 
+            ? ` (${inv.currency} ${originalAmount.toFixed(2)} -> INR ${amountInBase.toFixed(2)})`
+            : ` (${inv.currency} ${originalAmount.toFixed(2)})`;
       }
 
       return {
@@ -90,7 +81,23 @@ export class LedgerService {
       };
     });
 
-    const debitEntries = expenses.map(exp => {
+    // [NEW] Map Other Income
+    const incomeEntries = otherIncome.map(inc => {
+      const amount = Number(inc.amount);
+      return {
+        id: `INC-${inc.id}`,
+        date: inc.date,
+        description: inc.description || 'Other Income',
+        ref: '-',
+        category: inc.category, // e.g., "Interest"
+        type: 'CREDIT',
+        amount: amount,
+        credit: amount,
+        debit: 0
+      };
+    });
+
+    const expenseEntries = expenses.map(exp => {
       const amount = Number(exp.amount?.toString() || 0);
       return {
         id: `EXP-${exp.id}`,
@@ -105,8 +112,8 @@ export class LedgerService {
       };
     });
 
-    // 5. Combine & Sort
-    const ledger = [...creditEntries, ...debitEntries].sort((a, b) => 
+    // 5. Combine All & Sort
+    const ledger = [...invoiceEntries, ...incomeEntries, ...expenseEntries].sort((a, b) => 
       new Date(b.date).getTime() - new Date(a.date).getTime()
     );
 

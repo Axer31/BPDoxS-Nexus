@@ -378,7 +378,7 @@ export const generateInvoiceHTML = (invoice: any, ownerProfile: any): string => 
     }
 
     .stamp-img {
-        height: 40px;
+        height: 50px;
         width: auto;
         object-fit: contain;
         opacity: 0.9;

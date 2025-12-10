@@ -209,6 +209,18 @@ model Expense {
   @@map("Expense")
 }
 
+model OtherIncome {
+  id          Int      @id @default(autoincrement())
+  category    String   // e.g., "Bank Interest", "Asset Sale"
+  amount      Decimal  @db.Decimal(15, 2)
+  date        DateTime
+  description String?  @db.Text
+  
+  created_at  DateTime @default(now())
+
+  @@map("OtherIncome")
+}
+
 // --------------------------------------
 // 4. UTILITIES & SEQUENCING
 // --------------------------------------

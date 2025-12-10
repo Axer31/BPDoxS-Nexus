@@ -11,7 +11,7 @@ import { ToastProvider } from "@/components/ui/toast-context";
 const inter = Inter({ subsets: ["latin"] });
 
 export const metadata: Metadata = {
-  title: "InvoiceCore",
+  title: "BPDoxS Nexus",
   description: "Self-Hosted Invoicing System",
 };
 

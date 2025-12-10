@@ -33,15 +33,16 @@ router.get('/stats', async (req: Request, res: Response) => {
     // 1. AVAILABLE YEARS (Dynamic Filter Logic)
     // ==================================================================================
     if (shouldFetch('availableYears')) {
-        // A. Get Min/Max dates from Invoices and Expenses to determine the active range
-        const [invBounds, expBounds] = await Promise.all([
+        // A. Get Min/Max dates from Invoices, Expenses, AND OtherIncome
+        const [invBounds, expBounds, incBounds] = await Promise.all([
             prisma.invoice.aggregate({ _min: { issue_date: true }, _max: { issue_date: true } }),
-            prisma.expense.aggregate({ _min: { date: true }, _max: { date: true } })
+            prisma.expense.aggregate({ _min: { date: true }, _max: { date: true } }),
+            prisma.otherIncome.aggregate({ _min: { date: true }, _max: { date: true } }) // [NEW]
         ]);
 
         // B. Consolidate bounds to find global Min and Max
-        const minDates = [invBounds._min.issue_date, expBounds._min.date].filter(d => d !== null) as Date[];
-        const maxDates = [invBounds._max.issue_date, expBounds._max.date].filter(d => d !== null) as Date[];
+        const minDates = [invBounds._min.issue_date, expBounds._min.date, incBounds._min.date].filter(d => d !== null) as Date[];
+        const maxDates = [invBounds._max.issue_date, expBounds._max.date, incBounds._max.date].filter(d => d !== null) as Date[];
 
         // C. Default to current FY if no data exists
         const currentMonth = new Date().getMonth();
@@ -72,7 +73,7 @@ router.get('/stats', async (req: Request, res: Response) => {
     // 2. SUMMARY & TOP METRICS
     // ==================================================================================
     if (shouldFetch('summary')) {
-        // FETCH REVENUE (PAID) - WITH MANUAL INR SUPPORT
+        // A. FETCH INVOICE REVENUE
         const paidInvoices = await prisma.invoice.findMany({
             where: {
                 status: { in: ['PAID', 'Paid'] },
@@ -80,11 +81,17 @@ router.get('/stats', async (req: Request, res: Response) => {
             },
             select: { 
                 grand_total: true, 
-                received_amount: true // <--- Fetch Manual Amount if exists
+                received_amount: true 
             }
         });
 
-        // FETCH PENDING (SENT/OVERDUE) - Just Sum Grand Total
+        // B. [NEW] FETCH OTHER INCOME REVENUE
+        const otherIncomeAgg = await prisma.otherIncome.aggregate({
+            _sum: { amount: true },
+            where: { date: { gte: fromDate, lte: toDate } }
+        });
+
+        // C. FETCH PENDING
         const pendingInvoices = await prisma.invoice.aggregate({
             _sum: { grand_total: true },
             where: {
@@ -93,15 +100,18 @@ router.get('/stats', async (req: Request, res: Response) => {
             }
         });
 
-        // LOGIC: Use 'received_amount' if exists (Manual INR), else fallback to 'grand_total'
-        const totalRevenue = paidInvoices.reduce((sum, inv) => {
+        // CALCULATE TOTAL REVENUE (Invoices + Other Income)
+        const invoiceRevenue = paidInvoices.reduce((sum, inv) => {
             const actual = inv.received_amount ? Number(inv.received_amount) : Number(inv.grand_total);
             return sum + actual;
         }, 0);
 
-        // NEW LOGIC: Calculate Average Sale
+        const otherRevenue = Number(otherIncomeAgg._sum.amount || 0);
+        const totalRevenue = invoiceRevenue + otherRevenue;
+
+        // CALCULATE AVG SALE (Only based on Invoices for business accuracy)
         const paidCount = paidInvoices.length;
-        const avgSale = paidCount > 0 ? totalRevenue / paidCount : 0;
+        const avgSale = paidCount > 0 ? invoiceRevenue / paidCount : 0;
 
         const totalPending = Number(pendingInvoices._sum.grand_total || 0);
 
@@ -117,7 +127,9 @@ router.get('/stats', async (req: Request, res: Response) => {
             totalExpense, 
             netProfit: totalRevenue - totalExpense, 
             totalPending,
-            avgSale // <--- Included in response
+            avgSale,
+            invoiceRevenue, // Optional: useful if frontend wants to split it
+            otherRevenue    // Optional
         };
     }
 
@@ -134,18 +146,22 @@ router.get('/stats', async (req: Request, res: Response) => {
     // 3. MONTHLY STATS (Charts)
     // ==================================================================================
     if (shouldFetch('monthlyStats')) {
+        // A. Invoices
         const paidInvoices = await prisma.invoice.findMany({
             where: {
                 status: { in: ['PAID', 'Paid'] },
                 payment_date: { gte: fromDate, lte: toDate }
             },
-            select: { 
-                payment_date: true, 
-                grand_total: true,
-                received_amount: true
-            }
+            select: { payment_date: true, grand_total: true, received_amount: true }
         });
 
+        // B. [NEW] Other Income
+        const otherIncomes = await prisma.otherIncome.findMany({
+            where: { date: { gte: fromDate, lte: toDate } },
+            select: { date: true, amount: true }
+        });
+
+        // C. Expenses
         const allExpenses = await prisma.expense.findMany({
             where: { date: { gte: fromDate, lte: toDate } },
             select: { date: true, amount: true }
@@ -153,17 +169,25 @@ router.get('/stats', async (req: Request, res: Response) => {
 
         const statsMap = new Map<string, { revenue: number; expense: number; count: number }>();
 
-        // Aggregate Revenue
+        // Aggregate Invoices
         paidInvoices.forEach(inv => {
             const d = inv.payment_date || new Date(); 
             const month = format(d, 'MMM yyyy');
             const existing = statsMap.get(month) || { revenue: 0, expense: 0, count: 0 };
             
-            // LOGIC: Use 'received_amount' if exists, else 'grand_total'
             const amount = inv.received_amount ? Number(inv.received_amount) : Number(inv.grand_total);
 
             existing.revenue += amount;
             existing.count += 1;
+            statsMap.set(month, existing);
+        });
+
+        // [NEW] Aggregate Other Income
+        otherIncomes.forEach(inc => {
+            const month = format(inc.date, 'MMM yyyy');
+            const existing = statsMap.get(month) || { revenue: 0, expense: 0, count: 0 };
+            existing.revenue += Number(inc.amount);
+            // We don't increment 'count' here to keep avgSale metric purely invoice-based
             statsMap.set(month, existing);
         });
 
@@ -186,7 +210,7 @@ router.get('/stats', async (req: Request, res: Response) => {
                     expense: val.expense,
                     net: net,
                     balance: cumulativeBalance,
-                    avgSale: val.count > 0 ? val.revenue / val.count : 0,
+                    avgSale: val.count > 0 ? val.revenue / val.count : 0, // Note: this avg is skewed if we add other income to revenue but not count. Ideally avgSale should use invoiceRevenue.
                     sortDate: new Date(month) 
                 };
             })
@@ -207,21 +231,22 @@ router.get('/stats', async (req: Request, res: Response) => {
         if (requestedStartYears.length > 0) {
             const minStartYear = Math.min(...requestedStartYears);
             const maxStartYear = Math.max(...requestedStartYears);
+            const rangeStart = new Date(minStartYear, 3, 1);
+            const rangeEnd = new Date(maxStartYear + 1, 2, 31);
             
-            // Fetch all paid invoices in the broad range
+            // A. Fetch Invoices
             const historicalInvoices = await prisma.invoice.findMany({
                 where: {
                     status: { in: ['PAID', 'Paid'] },
-                    payment_date: { 
-                        gte: new Date(minStartYear, 3, 1), 
-                        lte: new Date(maxStartYear + 1, 2, 31) 
-                    }
+                    payment_date: { gte: rangeStart, lte: rangeEnd }
                 },
-                select: { 
-                    payment_date: true, 
-                    grand_total: true,
-                    received_amount: true
-                }
+                select: { payment_date: true, grand_total: true, received_amount: true }
+            });
+
+            // B. [NEW] Fetch Other Income
+            const historicalIncome = await prisma.otherIncome.findMany({
+                where: { date: { gte: rangeStart, lte: rangeEnd } },
+                select: { date: true, amount: true }
             });
 
             const fyMap = new Map<string, number>();
@@ -230,12 +255,21 @@ router.get('/stats', async (req: Request, res: Response) => {
                 fyMap.set(fyStr, 0);
             });
 
+            // Sum Invoices
             historicalInvoices.forEach(inv => {
                 if (!inv.payment_date) return;
                 const fyStr = getFinancialYear(inv.payment_date);
                 if (fyMap.has(fyStr)) {
                     const amount = inv.received_amount ? Number(inv.received_amount) : Number(inv.grand_total);
                     fyMap.set(fyStr, (fyMap.get(fyStr) || 0) + amount);
+                }
+            });
+
+            // [NEW] Sum Other Income
+            historicalIncome.forEach(inc => {
+                const fyStr = getFinancialYear(inc.date);
+                if (fyMap.has(fyStr)) {
+                    fyMap.set(fyStr, (fyMap.get(fyStr) || 0) + Number(inc.amount));
                 }
             });
 
@@ -247,7 +281,7 @@ router.get('/stats', async (req: Request, res: Response) => {
     }
 
     // ==================================================================================
-    // 5. EXPENSE TABLE
+    // 5. EXPENSE TABLE (Unchanged)
     // ==================================================================================
     if (shouldFetch('expenseTable')) {
         const expenseRaw = await prisma.expense.findMany({

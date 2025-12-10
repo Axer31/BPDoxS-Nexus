@@ -25,6 +25,7 @@ import ledgerRoutes from './routes/ledgerRoutes';
 import profileRoutes from './routes/profileRoutes';
 import notificationRoutes from './routes/notificationRoutes';
 import activityRoutes from './routes/activityRoutes';
+import incomeRoutes from './routes/incomeRoutes';
 import { ActivityService } from './services/ActivityService';
 
 import { authenticateToken } from './middleware/authMiddleware';
@@ -44,7 +45,12 @@ app.set('trust proxy', 1);
 app.use(helmet({
   crossOriginResourcePolicy: { policy: "cross-origin" } 
 })); 
-app.use(cors());   
+app.use(cors( 
+  {
+    origin: true,
+    credentials: true
+  }
+));
 app.use(express.json()); 
 app.use(morgan('dev'));  
 
@@ -82,6 +88,7 @@ app.use('/api/ledger', ledgerRoutes);
 app.use('/api/profile', profileRoutes);
 app.use('/api/notifications', notificationRoutes);
 app.use('/api/activity', activityRoutes);
+app.use('/api/income', incomeRoutes);
 
 // 5. Start Server
 app.listen(PORT, () => {
