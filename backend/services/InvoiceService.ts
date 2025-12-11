@@ -102,25 +102,44 @@ export class InvoiceService {
           sequence = await tx.invoiceSequence.create({ data: { fiscal_year: fy, last_count: 0 } });
         }
         
-        const nextCount = sequence.last_count + 1;
+        let nextCount = sequence.last_count;
+        let isUnique = false;
+
+        // --- COLLISION DETECTION LOOP ---
+        // We assume the next number is available. If taken (by manual entry), we skip it.
+        while (!isUnique) {
+            nextCount++;
+
+            // Generate Number String
+            let numStr = format
+                .replace('{FY}', fy)
+                .replace('{YYYY}', dateObj.getFullYear().toString())
+                .replace('{MM}', (dateObj.getMonth() + 1).toString().padStart(2, '0'))
+                .replace('{DD}', dateObj.getDate().toString().padStart(2, '0'));
+
+            const seqMatch = numStr.match(/{SEQ(?::(\d+))?}/);
+            if (seqMatch) {
+                const padding = seqMatch[1] ? parseInt(seqMatch[1]) : 3;
+                numStr = numStr.replace(seqMatch[0], nextCount.toString().padStart(padding, '0'));
+            } else {
+                numStr = `${numStr}-${nextCount}`;
+            }
+
+            // Check DB for existing invoice with this number
+            // @ts-ignore
+            const existing = await tx.invoice.findUnique({ where: { invoice_number: numStr } });
+            
+            if (!existing) {
+                invoiceNumber = numStr;
+                isUnique = true;
+            }
+            // If existing found, the loop continues and nextCount increments
+        }
+        
+        // Update Sequence to the new high water mark
         // @ts-ignore
         await tx.invoiceSequence.update({ where: { id: sequence.id }, data: { last_count: nextCount } });
 
-        // Generate Number String
-        let numStr = format
-            .replace('{FY}', fy)
-            .replace('{YYYY}', dateObj.getFullYear().toString())
-            .replace('{MM}', (dateObj.getMonth() + 1).toString().padStart(2, '0'))
-            .replace('{DD}', dateObj.getDate().toString().padStart(2, '0'));
-
-        const seqMatch = numStr.match(/{SEQ(?::(\d+))?}/);
-        if (seqMatch) {
-            const padding = seqMatch[1] ? parseInt(seqMatch[1]) : 3;
-            numStr = numStr.replace(seqMatch[0], nextCount.toString().padStart(padding, '0'));
-        } else {
-            numStr = `${numStr}-${nextCount}`;
-        }
-        invoiceNumber = numStr;
       } else {
         // B. Manual Override Check
         // @ts-ignore

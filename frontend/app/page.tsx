@@ -1,10 +1,10 @@
 "use client";
 
-import React, { useEffect, useState } from "react";
+import React, { useEffect, useState, useMemo } from "react";
 import api from "@/lib/api";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
-import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
-import { DollarSign, Activity, TrendingUp, Wallet, Loader2, Check, ChevronsUpDown, BadgePercent } from "lucide-react";
+import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow, TableFooter } from "@/components/ui/table";
+import { DollarSign, Activity, Wallet, Loader2, Check, ChevronsUpDown, BadgePercent } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { ScrollArea } from "@/components/ui/scroll-area";
@@ -19,58 +19,82 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 
 // --- DATE HELPERS ---
 
-// 1. Helper for specific Financial Year (Used for charts/tables that are strictly FY based)
 const getFinancialYearDates = (startYear: number) => {
-    const from = new Date(startYear, 3, 1); // April 1st
+    // Strictly use 12:00 PM to avoid timezone rollback issues in API calls
+    const from = new Date(startYear, 3, 1, 12, 0, 0); // April 1st, 12:00 PM
     const to = new Date(startYear + 1, 2, 31, 23, 59, 59); // March 31st next year
     return { from, to };
 };
 
-// 2. New Helper for Overview Filter (Handles Daily, Monthly, Quarterly, Yearly, All Time, FY)
 const getOverviewDates = (filter: string) => {
     const now = new Date();
     const currentYear = now.getFullYear();
     const currentMonth = now.getMonth();
 
-    // Handle Financial Year Format: "FY-2024"
     if (filter.startsWith('FY-')) {
         const startYear = parseInt(filter.split('-')[1]);
         return getFinancialYearDates(startYear);
     }
 
     switch (filter) {
-        case 'daily': // Today 00:00 - 23:59
+        case 'daily': 
             return { 
                 from: new Date(currentYear, currentMonth, now.getDate(), 0, 0, 0),
                 to: new Date(currentYear, currentMonth, now.getDate(), 23, 59, 59)
             };
-        case 'monthly': // This Month
+        case 'monthly': 
             return { 
                 from: new Date(currentYear, currentMonth, 1), 
                 to: new Date(currentYear, currentMonth + 1, 0, 23, 59, 59) 
             };
-        case 'quarterly': // This Quarter
+        case 'quarterly': 
             const qStartMonth = Math.floor(currentMonth / 3) * 3;
             return { 
                 from: new Date(currentYear, qStartMonth, 1), 
                 to: new Date(currentYear, qStartMonth + 3, 0, 23, 59, 59) 
             };
-        case 'yearly': // Calendar Year (Jan - Dec)
+        case 'yearly': 
             return { 
                 from: new Date(currentYear, 0, 1), 
                 to: new Date(currentYear, 11, 31, 23, 59, 59) 
             };
-        case 'all': // All Time (from 2000 to Now)
+        case 'all': 
             return { 
                 from: new Date(2000, 0, 1), 
                 to: new Date() 
             };
-        default: // Default to Month
+        default: 
             return { 
                 from: new Date(currentYear, currentMonth, 1), 
                 to: new Date(currentYear, currentMonth + 1, 0, 23, 59, 59) 
             };
     }
+};
+
+// ROBUST DATE PARSER: Handles "Mar24", "Mar 24", "Mar-24" formats
+const parseFlexibleDate = (dateStr: string) => {
+    if (!dateStr) return new Date(NaN);
+    
+    // Regex to match "Mar", "24" in various combinations
+    // Matches 3+ letters (Month) ... optional separator ... 2 or 4 digits (Year)
+    const match = String(dateStr).match(/([a-zA-Z]{3,})[\s\-'"]*(\d{2,4})/);
+    
+    if (match) {
+        const monthPart = match[1];
+        let yearPart = match[2];
+        
+        // Convert 2-digit year "24" to "2024"
+        if (yearPart.length === 2) {
+            yearPart = "20" + yearPart;
+        }
+        
+        const d = new Date(`${monthPart} 1, ${yearPart}`);
+        if (!isNaN(d.getTime())) return d;
+    }
+    
+    // Fallback to standard parsing (e.g. for ISO strings)
+    const fallback = new Date(dateStr);
+    return isNaN(fallback.getTime()) ? new Date(NaN) : fallback;
 };
 
 export default function DashboardPage() {
@@ -80,47 +104,36 @@ export default function DashboardPage() {
   
   // --- STATE MANAGEMENT ---
   
-  // 0. Dynamic Years State
   const [activeYears, setActiveYears] = useState<number[]>([initialFyStart]); 
-
-  // 1. Overview Filter State (Changed from strictly FY to generic filter)
-  const [overviewFilter, setOverviewFilter] = useState<string>("monthly"); // Default: This Month
+  const [overviewFilter, setOverviewFilter] = useState<string>("monthly");
   const [summary, setSummary] = useState<any>({});
 
-  // 2. Comparison Chart State
   const [comparisonYears, setComparisonYears] = useState<number[]>([
     initialFyStart, initialFyStart - 1, initialFyStart - 2, initialFyStart - 3
   ]);
   const [isYearDropdownOpen, setIsYearDropdownOpen] = useState(false);
   const [yearlyData, setYearlyData] = useState<any[]>([]);
 
-  // 3. Net Balance State
   const [netBalanceFy, setNetBalanceFy] = useState<string>(initialFyStart.toString());
   const [netBalanceData, setNetBalanceData] = useState<any[]>([]);
 
-  // 4. Monthly Performance State
   const [monthlyFy, setMonthlyFy] = useState<string>(initialFyStart.toString());
   const [monthlyData, setMonthlyData] = useState<any[]>([]);
 
-  // 5. Expense Table State
   const [expenseFy, setExpenseFy] = useState<string>(initialFyStart.toString());
   const [expenseTable, setExpenseTable] = useState<any[]>([]);
   const [expenseColumns, setExpenseColumns] = useState<string[]>([]);
 
-  // 6. Recent Balances State
   const [recentFy, setRecentFy] = useState<string>(initialFyStart.toString());
   const [recentData, setRecentData] = useState<any[]>([]);
 
-  // 7. Shared Data State
   const [sharedInvoices, setSharedInvoices] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
 
   // --- DATA FETCHING ---
 
-  // A. Fetch Initial Static Data (Shared Invoices & Available Years)
   useEffect(() => {
     const fetchInit = async () => {
-        // Initial summary fetch uses the default 'overviewFilter' state (monthly)
         const dates = getOverviewDates(overviewFilter);
         const params = new URLSearchParams({
             from: dates.from.toISOString(),
@@ -137,9 +150,9 @@ export default function DashboardPage() {
             setSummary(statsRes.data.summary);
             setSharedInvoices(sharedRes.data);
 
-            // Update Active Years List if data exists
             if (statsRes.data.availableYears && statsRes.data.availableYears.length > 0) {
-                setActiveYears(statsRes.data.availableYears);
+                // Ensure years are stored as Numbers to prevent math errors later
+                setActiveYears(statsRes.data.availableYears.map((y: any) => Number(y)));
             }
         } catch (e) { console.error(e); } 
         finally { setLoading(false); }
@@ -147,11 +160,10 @@ export default function DashboardPage() {
     fetchInit();
   }, []);
 
-  // B. Fetch Summary ONLY when Overview Dropdown Changes (Reactive)
   useEffect(() => {
-    if (loading) return; // Skip on initial load (handled by fetchInit)
+    if (loading) return;
     const fetchSummary = async () => {
-        const dates = getOverviewDates(overviewFilter); // Use new helper
+        const dates = getOverviewDates(overviewFilter);
         const params = new URLSearchParams({
             from: dates.from.toISOString(),
             to: dates.to.toISOString(),
@@ -163,9 +175,8 @@ export default function DashboardPage() {
         } catch (e) { console.error(e); }
     };
     fetchSummary();
-  }, [overviewFilter]); // Listen to overviewFilter
+  }, [overviewFilter]);
 
-  // C. Fetch Yearly Comparison
   useEffect(() => {
     const fetchYearly = async () => {
         if (comparisonYears.length === 0) return;
@@ -181,10 +192,9 @@ export default function DashboardPage() {
     fetchYearly();
   }, [comparisonYears]);
 
-  // D. Fetch Net Balance
   useEffect(() => {
     const fetchNet = async () => {
-        const fyDates = getFinancialYearDates(parseInt(netBalanceFy));
+        const fyDates = getFinancialYearDates(parseInt(netBalanceFy, 10));
         const params = new URLSearchParams({
             from: fyDates.from.toISOString(),
             to: fyDates.to.toISOString(),
@@ -196,10 +206,9 @@ export default function DashboardPage() {
     fetchNet();
   }, [netBalanceFy]);
 
-  // E. Fetch Monthly Performance
   useEffect(() => {
     const fetchMonthly = async () => {
-        const fyDates = getFinancialYearDates(parseInt(monthlyFy));
+        const fyDates = getFinancialYearDates(parseInt(monthlyFy, 10));
         const params = new URLSearchParams({
             from: fyDates.from.toISOString(),
             to: fyDates.to.toISOString(),
@@ -211,10 +220,9 @@ export default function DashboardPage() {
     fetchMonthly();
   }, [monthlyFy]);
 
-  // F. Fetch Expenses
   useEffect(() => {
     const fetchExpenses = async () => {
-        const fyDates = getFinancialYearDates(parseInt(expenseFy));
+        const fyDates = getFinancialYearDates(parseInt(expenseFy, 10));
         const params = new URLSearchParams({
             from: fyDates.from.toISOString(),
             to: fyDates.to.toISOString(),
@@ -227,20 +235,54 @@ export default function DashboardPage() {
     fetchExpenses();
   }, [expenseFy]);
 
-  // G. Fetch Recent Balances
+  // G. Fetch Recent Balances (ALL HISTORY for Cumulative Calculation)
+  // Use AbortController + mounted guard + no-cache header to avoid race/caching issues
   useEffect(() => {
+    let mounted = true;
+    const ctrl = new AbortController();
+
     const fetchRecent = async () => {
-        const fyDates = getFinancialYearDates(parseInt(recentFy));
+        if (!mounted) return;
+        if (activeYears.length === 0) return;
+
+        // Start from the earliest available year
+        const minYear = Math.min(...activeYears);
+        const maxYear = Math.max(...activeYears);
+        
+        const start = getFinancialYearDates(minYear).from;
+        const end = getFinancialYearDates(maxYear).to;
+
         const params = new URLSearchParams({
-            from: fyDates.from.toISOString(),
-            to: fyDates.to.toISOString(),
+            from: start.toISOString(),
+            to: end.toISOString(),
             sections: 'monthlyStats'
         });
-        const res = await api.get(`/dashboard/stats?${params}`);
-        setRecentData(res.data.charts.monthlyStats);
+        
+        try {
+            const res = await api.get(`/dashboard/stats?${params}`, {
+              // If your api client supports passing fetch options / headers,
+              // ensure these are forwarded to the underlying fetch to avoid cache.
+              // Axios doesn't use this signature; for axios you can instead set headers in config.
+              signal: (ctrl as any).signal
+            } as any);
+            // If using axios, res is as before.
+            // Log payload to make it easier to debug timing-dependent empty responses.
+            if (!mounted) return;
+            console.log('recentData fetched', res?.data?.charts?.monthlyStats);
+            setRecentData(res.data.charts.monthlyStats || []);
+        } catch (e: any) {
+            if (e && e.name === 'AbortError') return;
+            console.error('fetchRecent failed', e);
+            if (mounted) setRecentData([]);
+        }
     };
     fetchRecent();
-  }, [recentFy]);
+
+    return () => {
+      mounted = false;
+      try { ctrl.abort(); } catch (e) {}
+    };
+  }, [activeYears]);
 
 
   // --- HELPERS ---
@@ -260,6 +302,91 @@ export default function DashboardPage() {
     );
   };
 
+  // --- EXPENSE FOOTER CALCULATION ---
+  const expenseFooter = useMemo(() => {
+    if (!expenseTable || expenseTable.length === 0) return null;
+    const totals: Record<string, number> = {};
+    expenseColumns.forEach(col => {
+        totals[col] = expenseTable.reduce((sum, row) => sum + (Number(row[col]) || 0), 0);
+    });
+    totals.grandTotal = expenseTable.reduce((sum, row) => sum + (Number(row.total) || 0), 0);
+    totals.averageTotal = expenseTable.reduce((sum, row) => sum + (Number(row.average) || 0), 0);
+    return totals;
+  }, [expenseTable, expenseColumns]);
+
+  // --- CUMULATIVE BALANCE CALCULATION ---
+  const recentHistoryWithBalance = useMemo(() => {
+    if (!recentData || recentData.length === 0) return [];
+    
+    let runningBalance = 0;
+
+    // 1. Sort Chronologically (Oldest -> Newest) using Robust Parser
+    const sortedHistory = [...recentData].sort((a, b) => {
+        const dateA = parseFlexibleDate(a.date || a.month);
+        const dateB = parseFlexibleDate(b.date || b.month);
+
+        const timeA = isNaN(dateA.getTime()) ? 0 : dateA.getTime();
+        const timeB = isNaN(dateB.getTime()) ? 0 : dateB.getTime();
+
+        return timeA - timeB;
+    });
+
+    // 2. Calculate Cumulative Balance
+    const fullHistory = sortedHistory.map((month: any) => {
+        const netForMonth = (Number(month.revenue) || 0) - (Number(month.expense) || 0);
+        runningBalance += netForMonth;
+        return {
+            ...month,
+            netForMonth,
+            runningBalance // Carries forward
+        };
+    });
+
+    // 3. Filter for the Selected View (recentFy)
+    const targetYear = parseInt(recentFy, 10);
+
+    // helper: try to produce a sensible Date for an item even if month string lacks year
+    const inferDateForItem = (item: any) => {
+      const raw = item.date || item.month || "";
+      const parsed = parseFlexibleDate(raw);
+
+      if (!isNaN(parsed.getTime())) return parsed;
+
+      // If parse fails, try to infer from short month name (e.g. "Apr", "May")
+      const shortMatch = String(raw).match(/^([A-Za-z]{3})$/);
+      if (shortMatch) {
+        const monthName = shortMatch[1];
+        const monthIndex = new Date(`${monthName} 1, ${targetYear}`).getMonth(); // 0-11
+        // If month is April (3) or later, it's in targetYear, otherwise it's in targetYear+1 (FY logic)
+        const inferredYear = monthIndex >= 3 ? targetYear : targetYear + 1;
+        const inferredDate = new Date(inferredYear, monthIndex, 1, 12, 0, 0); // noon to avoid TZ issues
+        return inferredDate;
+      }
+
+      // Last resort: return an invalid date so it will be excluded by the filter
+      return new Date(NaN);
+    };
+
+    return fullHistory.filter((item: any) => {
+        const itemDate = inferDateForItem(item);
+        if (isNaN(itemDate.getTime())) return false;
+
+        // Add 12 hours buffer to handle timezone rollovers
+        const adjustedDate = new Date(itemDate.getTime() + 1000 * 60 * 60 * 12);
+
+        const month = adjustedDate.getMonth(); // 0-11
+        const year = adjustedDate.getFullYear();
+
+        // Financial Year Logic: Apr(3) of Year -> Mar(2) of Year+1
+        if (year === targetYear && month >= 3) return true;
+        if (year === targetYear + 1 && month <= 2) return true;
+
+        return false;
+    });
+
+  }, [recentData, recentFy]);
+
+
   if (loading) return <div className="flex h-[80vh] items-center justify-center"><Loader2 className="h-8 w-8 animate-spin text-primary"/></div>;
 
   return (
@@ -272,7 +399,6 @@ export default function DashboardPage() {
             <p className="text-muted-foreground">Financial Overview</p>
         </div>
 
-        {/* OVERVIEW FILTER: NEW IMPLEMENTATION */}
         <div className="flex items-center gap-2">
             <span className="text-sm font-medium text-muted-foreground">Overview for:</span>
             <Select value={overviewFilter} onValueChange={setOverviewFilter}>
@@ -290,7 +416,6 @@ export default function DashboardPage() {
                             <SelectItem value="all">All Time</SelectItem>
                             
                             <p className="text-xs font-semibold text-muted-foreground px-2 py-1.5 mt-2">Financial Years</p>
-                            {/* DYNAMICALLY RENDERED FYs */}
                             {activeYears.map(year => (
                                 <SelectItem key={year} value={`FY-${year}`}>
                                     FY {year}-{year.toString().slice(-2) === '99' ? '00' : (year+1).toString().slice(-2)}
@@ -366,7 +491,7 @@ export default function DashboardPage() {
                 </Popover>
             }
         >
-            <ResponsiveContainer width="100%" height="100%">
+            <ResponsiveContainer width="100%" height="100%" minWidth={0}>
                 <BarChart data={yearlyData} margin={{ bottom: 20 }}>
                     <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="hsl(var(--border))" />
                     <XAxis dataKey="year" interval={0} tick={<CustomizedAxisTick />} height={60} stroke="hsl(var(--muted-foreground))" tickLine={false} axisLine={false} />
@@ -394,7 +519,7 @@ export default function DashboardPage() {
                 </Select>
             }
         >
-            <ResponsiveContainer width="100%" height="100%">
+            <ResponsiveContainer width="100%" height="100%" minWidth={0}>
                 <AreaChart data={netBalanceData}>
                     <defs>
                         <linearGradient id="colorBalance" x1="0" y1="0" x2="0" y2="1">
@@ -430,7 +555,7 @@ export default function DashboardPage() {
                 </Select>
             }
         >
-            <ResponsiveContainer width="100%" height="100%">
+            <ResponsiveContainer width="100%" height="100%" minWidth={0}>
                 <BarChart data={monthlyData}>
                     <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="hsl(var(--border))" />
                     <XAxis dataKey="month" fontSize={12} stroke="hsl(var(--muted-foreground))" tickLine={false} axisLine={false} dy={10} />
@@ -486,6 +611,24 @@ export default function DashboardPage() {
                         </TableRow>
                     ))}
                 </TableBody>
+                {expenseFooter && (
+                    <TableFooter className="bg-muted/50 font-bold border-t-2 border-primary/20">
+                        <TableRow>
+                            <TableCell>Total</TableCell>
+                            {expenseColumns.map(col => (
+                                <TableCell key={col} className="text-right text-foreground">
+                                    {formatCurrency(expenseFooter[col] || 0)}
+                                </TableCell>
+                            ))}
+                            <TableCell className="text-right text-primary">
+                                {formatCurrency(expenseFooter.grandTotal)}
+                            </TableCell>
+                            <TableCell className="text-right text-muted-foreground">
+                                {formatCurrency(expenseFooter.averageTotal)}
+                            </TableCell>
+                        </TableRow>
+                    </TableFooter>
+                )}
             </Table>
         </CardContent>
       </Card>
@@ -507,28 +650,32 @@ export default function DashboardPage() {
                 </Select>
             </CardHeader>
             <CardContent>
-                <Table>
-                    <TableHeader>
-                        <TableRow className="hover:bg-transparent">
-                            <TableHead>Month</TableHead>
-                            <TableHead className="text-right">Revenue</TableHead>
-                            <TableHead className="text-right">Expense</TableHead>
-                            <TableHead className="text-right">Balance</TableHead>
-                        </TableRow>
-                    </TableHeader>
-                    <TableBody>
-                        {recentData.slice(-5).reverse().map((m: any) => (
-                            <TableRow key={m.month}>
-                                <TableCell className="font-medium text-foreground">{m.month}</TableCell>
-                                <TableCell className="text-right text-green-600">+{formatCurrency(m.revenue)}</TableCell>
-                                <TableCell className="text-right text-red-600">-{formatCurrency(m.expense)}</TableCell>
-                                <TableCell className={`text-right font-bold ${m.net >= 0 ? 'text-primary' : 'text-orange-600'}`}>
-                                    {formatCurrency(m.net)}
-                                </TableCell>
+                {/* ScrollArea allows viewing the full year history */}
+                <ScrollArea className="h-[350px] pr-4">
+                    <Table>
+                        <TableHeader>
+                            <TableRow className="hover:bg-transparent">
+                                <TableHead>Month</TableHead>
+                                <TableHead className="text-right">Revenue</TableHead>
+                                <TableHead className="text-right">Expense</TableHead>
+                                <TableHead className="text-right">Balance</TableHead>
                             </TableRow>
-                        ))}
-                    </TableBody>
-                </Table>
+                        </TableHeader>
+                        <TableBody>
+                            {/* Display newest first, but data includes cumulative balance from past */}
+                            {[...recentHistoryWithBalance].reverse().map((m: any, index: number) => (
+                                <TableRow key={`${m.month}-${m.runningBalance || 0}-${m.id || index}`}>
+                                    <TableCell className="font-medium text-foreground">{m.month}</TableCell>
+                                    <TableCell className="text-right text-green-600">+{formatCurrency(m.revenue)}</TableCell>
+                                    <TableCell className="text-right text-red-600">-{formatCurrency(m.expense)}</TableCell>
+                                    <TableCell className={`text-right font-bold ${m.runningBalance >= 0 ? 'text-primary' : 'text-orange-600'}`}>
+                                        {formatCurrency(m.runningBalance)}
+                                    </TableCell>
+                                </TableRow>
+                            ))}
+                        </TableBody>
+                    </Table>
+                </ScrollArea>
             </CardContent>
         </Card>
 
@@ -577,7 +724,7 @@ export default function DashboardPage() {
   );
 }
 
-// Reusable Metric Card (Unchanged)
+// Reusable Metric Card
 function MetricCard({ title, value, icon, color, bg }: any) {
     const formatCurrency = (val: number) => new Intl.NumberFormat('en-IN', { style: 'currency', currency: 'INR', maximumFractionDigits: 0 }).format(val);
     return (

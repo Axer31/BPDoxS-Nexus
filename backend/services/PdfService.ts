@@ -118,7 +118,7 @@ export class PdfService {
           args: [
             '--no-sandbox', 
             '--disable-setuid-sandbox',
-            '--disable-dev-shm-usage', // Prevents memory crashes on low-RAM VPS
+            '--disable-dev-shm-usage',
             '--disable-gpu',
             '--font-render-hinting=none',
             '--disable-extensions',

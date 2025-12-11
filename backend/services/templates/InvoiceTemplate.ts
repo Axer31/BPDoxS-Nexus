@@ -3,7 +3,6 @@ import path from 'path';
 import { format } from 'date-fns';
 
 // --- Helper: Convert Number to Words (Indian Numbering System) ---
-// Note: You can switch this to International Numbering if your clients prefer "Millions" over "Lakhs"
 const numberToWords = (n: number): string => {
   const units = ['', 'One', 'Two', 'Three', 'Four', 'Five', 'Six', 'Seven', 'Eight', 'Nine', 'Ten', 'Eleven', 'Twelve', 'Thirteen', 'Fourteen', 'Fifteen', 'Sixteen', 'Seventeen', 'Eighteen', 'Nineteen'];
   const tens = ['', '', 'Twenty', 'Thirty', 'Forty', 'Fifty', 'Sixty', 'Seventy', 'Eighty', 'Ninety'];
@@ -133,8 +132,6 @@ export const generateInvoiceHTML = (invoice: any, ownerProfile: any): string => 
         `;
     }
 
-    
-
     // 5. HTML Template
     return `
 <!DOCTYPE html>
@@ -142,6 +139,10 @@ export const generateInvoiceHTML = (invoice: any, ownerProfile: any): string => 
 <head>
 <meta charset="UTF-8">
 <title>Invoice ${invoice.invoice_number}</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=DM+Sans:opsz,wght@9..40,400;500;700&family=Inter:wght@400;600;700&display=swap" rel="stylesheet">
+
 <style>
     @page { margin: 0; size: A4; }
     :root {
@@ -153,7 +154,7 @@ export const generateInvoiceHTML = (invoice: any, ownerProfile: any): string => 
     * { box-sizing: border-box; }
 
     body {
-        font-family: Calibri;
+        font-family: 'DM Sans', sans-serif; /* Changed from Calibri */
         font-size: 12pt;
         color: var(--text);
         margin: 0;
@@ -174,7 +175,7 @@ export const generateInvoiceHTML = (invoice: any, ownerProfile: any): string => 
         align-items: flex-start;
         gap: 25px;
         margin-bottom: 28px;
-        font-family: Helvetica;
+        font-family: 'Inter', sans-serif; /* Changed from Helvetica */
     }
 
     .company-name {
@@ -182,7 +183,7 @@ export const generateInvoiceHTML = (invoice: any, ownerProfile: any): string => 
         font-weight: 700;
         margin-bottom: 6px;
         color: #000;
-        font-family: Helvetica;
+        font-family: 'Inter', sans-serif; /* Changed from Helvetica */
     }
 
     .company-name-divider {
@@ -214,7 +215,12 @@ export const generateInvoiceHTML = (invoice: any, ownerProfile: any): string => 
     }
 
     .invoice-meta div { margin-right: 20px; }
-    .invoice-meta-label { font-weight: 600; color: #000; }
+    
+    .invoice-meta-label { 
+        font-weight: 600; 
+        color: #000; 
+        font-family: 'Inter', sans-serif; 
+    }
 
     /* CLIENT CARD */
     #client-card {
@@ -232,6 +238,7 @@ export const generateInvoiceHTML = (invoice: any, ownerProfile: any): string => 
         margin-bottom: 7px;
         text-transform: uppercase;
         color: #000;
+        font-family: 'Inter', sans-serif;
     }
 
     /* PRODUCT TABLE */
@@ -251,6 +258,7 @@ export const generateInvoiceHTML = (invoice: any, ownerProfile: any): string => 
         font-weight: 600;
         text-align: center;
         overflow: hidden;
+        font-family: 'Inter', sans-serif;
     }
 
     #product-table tbody td {
@@ -309,6 +317,7 @@ export const generateInvoiceHTML = (invoice: any, ownerProfile: any): string => 
         font-weight: bold; 
         color: #000; 
         margin-bottom: 5px; 
+        font-family: 'Inter', sans-serif;
     }
 
     /* TOTALS BOX */
@@ -349,6 +358,7 @@ export const generateInvoiceHTML = (invoice: any, ownerProfile: any): string => 
         font-size: 12px !important;
         color: #000;
         padding-top: 8px !important;
+        font-family: 'Inter', sans-serif;
     }
     /* SIGNATURE SECTION */
 
@@ -455,7 +465,7 @@ export const generateInvoiceHTML = (invoice: any, ownerProfile: any): string => 
             ${invoice.client.addresses?.billing?.city || ''}, 
             ${invoice.client.addresses?.billing?.zip || ''}
         </div>
-        <div>${invoice.client.tax_id ? `Tax ID: ${invoice.client.tax_id}` : ''} ${invoice.client.tax_id && invoice.client.cin ? ' | ' : ''} ${invoice.client.cin ? `REG Number: ${invoice.client.cin}` : ''}</div>
+        <div>${invoice.client.tax_id ? `GSTIN: ${invoice.client.tax_id}` : ''} ${invoice.client.tax_id && invoice.client.cin ? ' | ' : ''} ${invoice.client.cin ? `REG Number: ${invoice.client.cin}` : ''}</div>
     </div>
 
     <table id="product-table" cellspacing="0">

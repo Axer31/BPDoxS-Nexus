@@ -5,9 +5,21 @@ import { AuthRequest, authorize } from '../middleware/authMiddleware';
 
 const router = Router();
 
+// GET /api/expenses?from=YYYY-MM-DD&to=YYYY-MM-DD
 router.get('/', async (req, res) => {
-  const expenses = await ExpenseService.getAllExpenses();
-  res.json(expenses);
+  try {
+      const { from, to } = req.query;
+      
+      const fromDate = from ? new Date(from as string) : undefined;
+      const toDate = to ? new Date(to as string) : undefined;
+
+      // Pass dates to service (undefined if not provided)
+      const expenses = await ExpenseService.getAllExpenses(fromDate, toDate);
+      res.json(expenses);
+  } catch (error) {
+      console.error("Fetch Expenses Error:", error);
+      res.status(500).json({ error: "Failed to fetch expenses" });
+  }
 });
 
 router.post('/', async (req: Request, res: Response) => {
