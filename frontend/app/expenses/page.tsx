@@ -196,7 +196,7 @@ export default function ExpensesPage() {
   const totalExpense = filteredExpenses.reduce((sum, item) => sum + Number(item.amount), 0);
 
   return (
-    <div className="p-6 space-y-6">
+    <div className="p-4 md:p-6 space-y-6 w-full max-w-full overflow-x-hidden">
       
       {/* HEADER */}
       <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4">
@@ -209,7 +209,7 @@ export default function ExpensesPage() {
             <DialogTrigger asChild>
                 <Button 
                     onClick={openNewExpenseDialog}
-                    className="bg-primary text-primary-foreground hover:bg-primary/90 shadow-lg shadow-primary/20"
+                    className="bg-primary text-primary-foreground hover:bg-primary/90 shadow-lg shadow-primary/20 w-full md:w-auto"
                 >
                     <Plus className="w-4 h-4 mr-2" /> Record Expense
                 </Button>
@@ -341,7 +341,7 @@ export default function ExpensesPage() {
         <div className="md:col-span-2 bg-card p-4 rounded-xl border border-border shadow-sm flex flex-col justify-center gap-4">
             <div className="flex flex-col xl:flex-row gap-4">
                 {/* Search */}
-                <div className="relative flex-1">
+                <div className="relative flex-1 w-full">
                     <Search className="absolute left-3 top-2.5 h-4 w-4 text-muted-foreground" />
                     <Input 
                         placeholder="Search category or description..." 
@@ -351,11 +351,11 @@ export default function ExpensesPage() {
                     />
                 </div>
 
-                {/* Filter Controls */}
-                <div className="flex items-center gap-2">
+                {/* Filter Controls - Responsive Stack */}
+                <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-2 w-full xl:w-auto">
                     {/* Preset Selector */}
                     <Select value={periodFilter} onValueChange={handlePeriodChange}>
-                        <SelectTrigger className="w-[180px]">
+                        <SelectTrigger className="w-full sm:w-[180px]">
                             <Filter className="w-4 h-4 mr-2 text-muted-foreground" />
                             <SelectValue placeholder="Period" />
                         </SelectTrigger>
@@ -372,12 +372,15 @@ export default function ExpensesPage() {
                         </SelectContent>
                     </Select>
 
-                    <span className="text-muted-foreground text-xs font-bold uppercase">OR</span>
+                    <div className="flex items-center justify-center sm:hidden py-1">
+                        <span className="text-muted-foreground text-[10px] font-bold uppercase">OR</span>
+                    </div>
+                    <span className="hidden sm:inline text-muted-foreground text-xs font-bold uppercase">OR</span>
 
                     {/* Date Range Picker */}
                     <Popover>
                         <PopoverTrigger asChild>
-                            <Button variant="outline" className={cn("w-[240px] justify-start text-left font-normal", !dateRange && "text-muted-foreground")}>
+                            <Button variant="outline" className={cn("w-full sm:w-[240px] justify-start text-left font-normal", !dateRange && "text-muted-foreground")}>
                                 <CalendarIcon className="mr-2 h-4 w-4" />
                                 {dateRange?.from ? (
                                     dateRange.to ? <>{format(dateRange.from, "LLL dd, y")} - {format(dateRange.to, "LLL dd, y")}</> : format(dateRange.from, "LLL dd, y")
@@ -391,7 +394,7 @@ export default function ExpensesPage() {
                     
                     {/* Clear Button */}
                     {(dateRange || periodFilter === 'CUSTOM') && (
-                            <Button variant="ghost" size="icon" onClick={() => handlePeriodChange('monthly')}><X className="w-4 h-4"/></Button>
+                            <Button variant="ghost" size="icon" onClick={() => handlePeriodChange('monthly')} className="self-end sm:self-auto"><X className="w-4 h-4"/></Button>
                     )}
                 </div>
             </div>
@@ -399,9 +402,9 @@ export default function ExpensesPage() {
       </div>
 
       {/* DATA TABLE */}
-      <Card className="shadow-horizon border-none bg-card">
+      <Card className="shadow-horizon border-none bg-card overflow-hidden min-w-0">
         <CardHeader><CardTitle>Transactions</CardTitle></CardHeader>
-        <CardContent>
+        <CardContent className="p-0 md:p-6 overflow-x-auto">
             {loading ? (
                 <div className="p-10 text-center text-muted-foreground flex justify-center">
                     <Loader2 className="animate-spin mr-2"/> Loading...
@@ -409,12 +412,12 @@ export default function ExpensesPage() {
             ) : (
                 <Table>
                     <TableHeader>
-                        <TableRow>
-                            <TableHead>Date</TableHead>
-                            <TableHead>Category</TableHead>
-                            <TableHead>Description</TableHead>
-                            <TableHead className="text-right">Amount</TableHead>
-                            <TableHead className="w-[50px]"></TableHead>
+                        <TableRow className="bg-muted/50 md:bg-transparent">
+                            <TableHead className="whitespace-nowrap">Date</TableHead>
+                            <TableHead className="whitespace-nowrap">Category</TableHead>
+                            <TableHead className="md:table-cell">Description</TableHead>
+                            <TableHead className="text-right whitespace-nowrap">Amount</TableHead>
+                            <TableHead className="w-[50px] hidden md:table-cell"></TableHead>
                         </TableRow>
                     </TableHeader>
                     <TableBody>
@@ -427,21 +430,21 @@ export default function ExpensesPage() {
                         )}
                         {filteredExpenses.map((expense) => (
                             <TableRow key={expense.id} className="group hover:bg-muted/50 transition-colors">
-                                <TableCell className="font-mono text-xs text-muted-foreground">
+                                <TableCell className="font-mono text-xs text-muted-foreground whitespace-nowrap">
                                     {format(new Date(expense.date), "dd MMM yyyy")}
                                 </TableCell>
                                 <TableCell>
-                                    <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-slate-100 dark:bg-slate-800 text-slate-800 dark:text-slate-300 border border-slate-200 dark:border-slate-700">
+                                    <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-slate-100 dark:bg-slate-800 text-slate-800 dark:text-slate-300 border border-slate-200 dark:border-slate-700 whitespace-nowrap">
                                         {expense.category}
                                     </span>
                                 </TableCell>
-                                <TableCell className="text-muted-foreground max-w-[300px] truncate text-sm" title={expense.description}>
+                                <TableCell className="text-muted-foreground max-w-[200px] md:max-w-[300px] truncate text-sm md:table-cell" title={expense.description}>
                                     {expense.description || "-"}
                                 </TableCell>
-                                <TableCell className="text-right font-bold text-red-600">
+                                <TableCell className="text-right font-bold text-red-600 whitespace-nowrap">
                                     - {new Intl.NumberFormat('en-IN', { style: 'currency', currency: 'INR' }).format(Number(expense.amount))}
                                 </TableCell>
-                                <TableCell>
+                                <TableCell className="hidden md:table-cell">
                                     <Button variant="ghost" size="icon" onClick={() => handleDelete(expense.id)} className="opacity-0 group-hover:opacity-100 transition-opacity hover:text-red-500">
                                         <Trash2 className="w-4 h-4" />
                                     </Button>
