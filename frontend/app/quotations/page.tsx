@@ -171,10 +171,16 @@ export default function QuotationListPage() {
   };
 
   const openView = (quote: Quotation) => {
-      // Parse items if they come as a JSON string from DB
-      const parsedItems = typeof quote.line_items === 'string' 
-          ? JSON.parse(quote.line_items) 
-          : quote.line_items;
+      // FIX: Crash Prevention
+      let parsedItems = [];
+      try {
+          parsedItems = typeof quote.line_items === 'string' 
+              ? JSON.parse(quote.line_items) 
+              : quote.line_items;
+      } catch (e) {
+          console.error("JSON Parse error for quote:", quote.id);
+          parsedItems = []; // Fallback to empty to prevent black screen crash
+      }
       
       setSelectedQuote({ ...quote, line_items: parsedItems });
       setIsViewOpen(true);
@@ -335,72 +341,89 @@ export default function QuotationListPage() {
 
       {/* === VIEW ONLY MODAL === */}
       <Dialog open={isViewOpen} onOpenChange={setIsViewOpen}>
-        <DialogContent className="max-w-4xl max-h-[90vh] overflow-y-auto bg-card border-border shadow-2xl">
-            <DialogHeader>
-                <div className="flex justify-between items-start pr-8">
-                    <div>
-                        <DialogTitle className="text-2xl font-bold text-primary">
-                            {selectedQuote?.quotation_number}
-                        </DialogTitle>
-                        <DialogDescription>
-                            Issued on {selectedQuote && format(new Date(selectedQuote.issue_date), "dd MMMM yyyy")}
-                        </DialogDescription>
-                    </div>
-                </div>
-            </DialogHeader>
-
-            {selectedQuote && (
-                <div className="space-y-8 py-4">
-                    <div className="grid grid-cols-2 md:grid-cols-4 gap-4 p-4 bg-muted/30 rounded-xl border border-border/50">
-                        <div><p className="text-xs font-semibold text-muted-foreground uppercase">Client</p><p className="text-sm font-bold mt-1">{selectedQuote.client.company_name}</p></div>
-                        <div><p className="text-xs font-semibold text-muted-foreground uppercase">Contact</p><p className="text-sm mt-1">{selectedQuote.client.phone || "—"}</p><p className="text-sm mt-1">{selectedQuote.client.email || "—"}</p></div>
+        <DialogContent className="w-[95vw] md:max-w-[90vw] h-[85vh] md:h-[90vh] flex flex-col overflow-hidden bg-card border-border shadow-2xl rounded-lg p-0 gap-0">
+            
+            {/* 1. HEADER (Fixed) */}
+            <div className="p-6 pb-2 shrink-0">
+                <DialogHeader>
+                    <div className="flex justify-between items-start pr-8">
                         <div>
-                            <p className="text-xs font-semibold text-muted-foreground uppercase">Total</p>
-                            <p className="text-sm mt-1 font-bold text-primary">
-                                {formatCurrency(selectedQuote.grand_total, selectedQuote.currency)}
-                            </p>
+                            <DialogTitle className="text-xl md:text-2xl font-bold text-primary">
+                                {selectedQuote?.quotation_number}
+                            </DialogTitle>
+                            <DialogDescription>
+                                Issued on {selectedQuote && format(new Date(selectedQuote.issue_date), "dd MMMM yyyy")}
+                            </DialogDescription>
                         </div>
                     </div>
-                    
-                    <div>
-                        <h3 className="font-bold text-foreground mb-3 flex items-center gap-2"><FileText className="w-4 h-4 text-primary" /> Items</h3>
-                        <div className="rounded-lg border border-border overflow-hidden">
-                            <Table>
-                                <TableHeader className="bg-muted/50">
-                                    <TableRow>
-                                        <TableHead className="w-[50%]">Description</TableHead>
-                                        <TableHead className="text-right">Qty</TableHead>
-                                        <TableHead className="text-right">Rate</TableHead>
-                                        <TableHead className="text-right">Amount</TableHead>
-                                    </TableRow>
-                                </TableHeader>
-                                <TableBody>
-                                    {(Array.isArray(selectedQuote.line_items) ? selectedQuote.line_items : []).map((item, idx) => (
-                                        <TableRow key={idx}>
-                                            <TableCell className="font-medium">{item.description}</TableCell>
-                                            <TableCell className="text-right">{item.quantity}</TableCell>
-                                            <TableCell className="text-right">
-                                                {formatCurrency(item.rate, selectedQuote.currency)}
-                                            </TableCell>
-                                            <TableCell className="text-right font-bold">
-                                                {formatCurrency(item.amount, selectedQuote.currency)}
-                                            </TableCell>
-                                        </TableRow>
-                                    ))}
-                                </TableBody>
-                            </Table>
+                </DialogHeader>
+            </div>
+
+            {/* 2. BODY (Scrollable) */}
+            <div className="flex-1 overflow-y-auto p-6 py-2">
+                {selectedQuote && (
+                    <div className="space-y-6 md:space-y-8">
+                        {/* Client Details Card */}
+                        <div className="grid grid-cols-2 md:grid-cols-4 gap-4 p-4 bg-muted/30 rounded-xl border border-border/50">
+                            <div className="col-span-2 md:col-span-1"><p className="text-xs font-semibold text-muted-foreground uppercase">Client</p><p className="text-sm font-bold mt-1 break-words">{selectedQuote.client.company_name}</p></div>
+                            <div className="col-span-2 md:col-span-1"><p className="text-xs font-semibold text-muted-foreground uppercase">Contact</p><p className="text-sm mt-1">{selectedQuote.client.phone || "—"}</p><p className="text-sm mt-1 break-all">{selectedQuote.client.email || "—"}</p></div>
+                            <div className="col-span-2 md:col-span-1">
+                                <p className="text-xs font-semibold text-muted-foreground uppercase">Total</p>
+                                <p className="text-sm mt-1 font-bold text-primary">
+                                    {formatCurrency(selectedQuote.grand_total, selectedQuote.currency)}
+                                </p>
+                            </div>
+                        </div>
+                        
+                        {/* Line Items */}
+                        <div>
+                            <h3 className="font-bold text-foreground mb-3 flex items-center gap-2"><FileText className="w-4 h-4 text-primary" /> Items</h3>
+                            <div className="rounded-lg border border-border overflow-hidden">
+                                <div className="overflow-x-auto">
+                                    <Table>
+                                        <TableHeader className="bg-muted/50">
+                                            <TableRow>
+                                                <TableHead className="w-[40%] md:w-[50%]">Description</TableHead>
+                                                <TableHead className="text-right">Qty</TableHead>
+                                                <TableHead className="text-right">Rate</TableHead>
+                                                <TableHead className="text-right">Amount</TableHead>
+                                            </TableRow>
+                                        </TableHeader>
+                                        <TableBody>
+                                            {(Array.isArray(selectedQuote.line_items) ? selectedQuote.line_items : []).map((item, idx) => (
+                                                <TableRow key={idx}>
+                                                    <TableCell className="font-medium min-w-[120px]">{item.description}</TableCell>
+                                                    <TableCell className="text-right">{item.quantity}</TableCell>
+                                                    <TableCell className="text-right whitespace-nowrap">
+                                                        {formatCurrency(item.rate, selectedQuote.currency)}
+                                                    </TableCell>
+                                                    <TableCell className="text-right font-bold whitespace-nowrap">
+                                                        {formatCurrency(item.amount, selectedQuote.currency)}
+                                                    </TableCell>
+                                                </TableRow>
+                                            ))}
+                                        </TableBody>
+                                    </Table>
+                                </div>
+                            </div>
+                        </div>
+                        
+                        {/* Terms & Footer Info */}
+                        <div className="grid grid-cols-1 md:grid-cols-2 gap-6 pb-4">
+                            <div className="space-y-2"><h4 className="text-sm font-bold">Services</h4><div className="p-3 bg-muted/20 rounded-lg text-sm min-h-[80px] whitespace-pre-wrap">{selectedQuote.services_offered || "N/A"}</div></div>
+                            <div className="space-y-2"><h4 className="text-sm font-bold">Terms</h4><div className="p-3 bg-muted/20 rounded-lg text-sm min-h-[80px] whitespace-pre-wrap">{selectedQuote.contract_terms || "N/A"}</div></div>
                         </div>
                     </div>
-                    
-                    <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-                        <div className="space-y-2"><h4 className="text-sm font-bold">Services</h4><div className="p-3 bg-muted/20 rounded-lg text-sm min-h-[80px] whitespace-pre-wrap">{selectedQuote.services_offered || "N/A"}</div></div>
-                        <div className="space-y-2"><h4 className="text-sm font-bold">Terms</h4><div className="p-3 bg-muted/20 rounded-lg text-sm min-h-[80px] whitespace-pre-wrap">{selectedQuote.contract_terms || "N/A"}</div></div>
-                    </div>
-                </div>
-            )}
-            <DialogFooter className="sm:justify-start">
-                <DialogClose asChild><Button type="button" variant="secondary">Close</Button></DialogClose>
-            </DialogFooter>
+                )}
+            </div>
+
+            {/* 3. FOOTER (Fixed) */}
+            <div className="p-6 pt-2 shrink-0 border-t border-border/50 bg-card">
+                <DialogFooter className="sm:justify-start">
+                    <DialogClose asChild><Button type="button" variant="secondary" className="w-full sm:w-auto">Close</Button></DialogClose>
+                </DialogFooter>
+            </div>
+
         </DialogContent>
       </Dialog>
 

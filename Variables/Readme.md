@@ -196,3 +196,10 @@ Based on Indian GST State Codes. Examples:
   * `27`: Maharashtra
   * `29`: Karnataka
   * `07`: Delhi
+
+## 7\. Email Variables
+
+Variable,Description
+{{invoice_number}},"The invoice number (e.g., INV/24-25/001)"
+{{client_name}},The client's company name
+{{amount}},The Grand Total amount

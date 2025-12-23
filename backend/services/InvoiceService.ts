@@ -113,7 +113,7 @@ export class InvoiceService {
   static async getSharedInvoices() {
     return await prisma.invoice.findMany({
       where: {
-        status: { notIn: ['DRAFT'] }
+        status: { notIn: ['DRAFT', 'PAID', 'CANCELLED'] }
       },
       include: { 
         client: true,

@@ -82,7 +82,7 @@ export const generateInvoiceHTML = (invoice: any, ownerProfile: any): string => 
 
     const formatDate = (dateString: any) => {
       try {
-        return dateString ? format(new Date(dateString), "dd MMM yyyy") : '-';
+        return dateString ? format(new Date(dateString), "dd MMMM yyyy") : '-';
       } catch (e) { return '-'; }
     };
 
@@ -209,6 +209,8 @@ export const generateInvoiceHTML = (invoice: any, ownerProfile: any): string => 
     .invoice-meta {
         display: flex;
         justify-content: space-between;
+        flex-direction: column;
+        align-items: flex-start;
         font-size: 12px;
         margin-bottom: 22px;
         padding-bottom: 10px;
@@ -451,8 +453,7 @@ export const generateInvoiceHTML = (invoice: any, ownerProfile: any): string => 
 
     <div class="invoice-meta">
         <div><span class="invoice-meta-label">Invoice #:</span> ${invoice.invoice_number}</div>
-        <div><span class="invoice-meta-label">Date:</span> ${formatDate(invoice.issue_date)}</div>
-        <div><span class="invoice-meta-label">Due:</span> ${invoice.due_date ? formatDate(invoice.due_date) : 'On Receipt'}</div>
+        <div><span class="invoice-meta-label">Invoice Date:</span> ${formatDate(invoice.issue_date)}</div>
     </div>
 
     <div id="client-card">

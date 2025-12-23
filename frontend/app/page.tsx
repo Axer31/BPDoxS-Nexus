@@ -668,7 +668,6 @@ export default function DashboardPage() {
                                 <TableCell className="text-muted-foreground text-sm truncate max-w-[120px]" title={inv.client?.company_name}>{inv.client?.company_name || "Unknown"}</TableCell>
                                 <TableCell>
                                     <Badge variant="outline" className={cn(
-                                        inv.status === 'PAID' && 'bg-green-50 text-green-700 border-green-200',
                                         inv.status === 'SENT' && 'bg-blue-50 text-blue-700 border-blue-200',
                                         inv.status === 'OVERDUE' && 'bg-red-50 text-red-700 border-red-200',
                                         inv.status === 'PARTIAL' && 'bg-orange-50 text-orange-700 border-orange-200'

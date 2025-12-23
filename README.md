@@ -3,7 +3,7 @@
 **Version:** 1.2.0  
 **License:** Proprietary / Internal Use Only  
 **Developer:** Anirban Guha
-**Architect & Security Engineer:** Mohan Preet Singh Virk aka Axer31
+**Architect & Security Engineer:** Mohan Preet Singh Virk aka Axer31   
 **Stack:** Next.js, Node.js, MySQL, Prisma
 
 -----
